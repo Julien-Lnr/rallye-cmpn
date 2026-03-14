@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion Rallye CMPN 2025</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="libs/html2pdf.bundle.min.js"></script>
+    <script src="libs/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="header">
+    <div style="display: flex; align-items: center; gap: 20px;">
+        <img src="logo_cmpn.png" alt="Logo CMPN" style="height: 80px; width: auto;">
+        <div style="font-size: 1.8em; font-weight: bold;">Club Motocycliste de la Police Nationale</div>
+        <img id="logo_region" src="logo_paca.png" alt="Logo Région" style="height: 80px; width: auto; margin-left: 10px;">
+    </div>
+</div>
+
+<div class="nav-tabs">
+    <button class="tab-link active" onclick="openTab('Jury')">1. Jury</button>
+    <button class="tab-link" onclick="openTab('Inscriptions')">2. Inscriptions</button>
+    <button class="tab-link" onclick="openTab('Dossards')">3. N° Dossards</button>
+    <button class="tab-link" onclick="openTab('Controles')">4. Contrôles Tech/Admin</button>
+    <button class="tab-link" onclick="openTab('Maniabilite')">5. Maniabilité & Tir</button>
+    <button class="tab-link" onclick="openTab('Orientation')">6. Orientation & Bases Chrono</button>
+    <button class="tab-link" onclick="openTab('Classement')">7. Classements</button>
+    
+    <div style="margin-left: auto; display: flex; align-items: center; padding-right: 20px;">
+        <div class="settings-icon" onclick="openTab('Points')" title="Paramètres des points" style="font-size: 35px; color: var(--police-blue);">⚙️</div>
+    </div>
+</div>
+
+<div class="content">
+
+    <div id="Points" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>⚙️ Configuration & Barèmes (Annexe 1)</h2>
+            <div class="grid" style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #eee;">
+                <div>
+                    <label>Région Organisatrice :</label>
+                    <select id="choix_region" onchange="changerRegion()" style="font-weight: bold; color: var(--police-blue);">
+                        <option value="cmpn">CMPN National</option>
+                        <option value="paca">CMPN PACA</option>
+                        <option value="idf">CMPN IDF et PARIS</option>
+                        <option value="go_cpl">CMPN GO et CPL</option>
+                        <option value="alip">CMPN ALIP</option>
+                        <option value="nord">CMPN NORD</option>
+                        <option value="raa">CMPN RAA</option>
+                        <option value="mplr">CMPN MPLR</option>
+                        <option value="alca">CMPN ALCA et BFC</option>
+                        <option value="om">CMPN OUTRE-MER</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid" style="margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 20px;">
+                <div>
+                    <h3 style="color: var(--police-blue); margin-top:0;">🏍️ Maniabilité & Tir</h3>
+                    <label>Pied à terre (pts) :</label><input type="number" id="p_pied" min="0" value="30" onchange="saveConfig()">
+                    <label>Cône/Piquet (pts) :</label><input type="number" id="p_cone" min="0" value="5" onchange="saveConfig()">
+                    <label>Atelier raté (pts) :</label><input type="number" id="p_atelier" min="0" value="50" onchange="saveConfig()">
+                    <label>Chute Maniabilité (pts) :</label><input type="number" id="p_chute" min="0" value="300" onchange="saveConfig()">
+                    <label>Tir manqué (pts) :</label><input type="number" id="p_tir" min="0" value="30" onchange="saveConfig()">
+                    <label>Retard Tir (pts par 1/10è sec) :</label><input type="number" id="p_tir_retard" min="0" value="1" onchange="saveConfig()">
+                </div>
+                <div>
+                    <h3 style="color: var(--police-blue); margin-top:0;">🗺️ Parcours Routier & Bases Chrono</h3>
+                    <label>CP manquant (pts) :</label><input type="number" id="p_cp" min="0" value="250" onchange="saveConfig()">
+                    <label>Bases Chrono (pts par seconde d'écart) :</label><input type="number" id="p_regu" min="0" value="10" onchange="saveConfig()">
+                    <label>Faute en Zone Bases Chrono (pts) :</label><input type="number" id="p_regu_f" min="0" value="600" onchange="saveConfig()">
+                    <label>Non passage Base Chrono (pts) :</label><input type="number" id="p_non_passage" min="0" value="20000" onchange="saveConfig()">
+                    <label>Excès &lt; 20km/h (pts/km) :</label><input type="number" id="p_v_l" min="0" value="20" onchange="saveConfig()">
+                    <label>Excès 21-39km/h (pts/km) :</label><input type="number" id="p_v_f" min="0" value="50" onchange="saveConfig()">
+                    <label>Mise Hors Épreuve (pts) :</label><input type="number" id="p_mhe" min="0" value="100000" onchange="saveConfig()">
+                    <label>Tenue non réglementaire (pts) :</label><input type="number" id="p_tenue" min="0" value="500" onchange="saveConfig()">
+                    <label>Briefing manqué (pts) :</label><input type="number" id="p_briefing" min="0" value="2000" onchange="saveConfig()">
+                    
+                    <div style="background:#f4f4f4; padding:10px; border-radius:5px; margin-top:15px;">
+                        <label>Tolérance Distance Compteur (%) :</label><input type="number" id="o_tol_dist" min="0" step="0.1" value="2" onchange="saveConfig()">
+                        <label>Pénalité Distance (pts par km dépassé) :</label><input type="number" id="o_pen_dist" min="0" value="100" onchange="saveConfig()">
+                    </div>
+                </div>
+            </div>
+            <button class="btn-red" onclick="resetApp()">🚨 RESET COMPLET DE L'APPLICATION</button>
+        </div>
+    </div>
+
+    <div id="Inscriptions" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>📝 Inscription des Concurrents</h2>
+            <div id="mappingContainer" style="display:none; margin-bottom: 20px;"></div>
+
+            <div class="grid">
+                <input type="text" id="nom" placeholder="NOM">
+                <input type="text" id="prenom" placeholder="Prénom">
+                <select id="spec">
+                    <option value="Police">Police</option>
+                    <option value="Civil">Civil</option>
+                </select>
+            </div>
+            <div style="margin-top:20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="ajouterPilote()">Ajouter manuellement</button>
+                <button class="btn-import" onclick="document.getElementById('fileInput').click()">📥 Importer Excel (CSV)</button>
+                <input type="file" id="fileInput" style="display:none;" accept=".csv" onchange="importerInscriptions(event)">
+                <button class="btn-green" onclick="exportInscriptions()">📤 Exporter Liste (CSV)</button>
+            </div>
+            <table id="tableInscrits">
+                <thead><tr><th>Nom</th><th>Prénom</th><th>Catégorie</th><th>Action</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="Dossards" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>🎲 Attribution des Dossards</h2>
+            <div id="alerteDossard" class="status-alert alert-wait">Aucun inscrit</div>
+            <button id="btnTirage" onclick="attribuerDossards()" style="font-size: 1.2em; padding: 15px 30px;">Lancer le tirage au sort aléatoire</button>
+            <table id="tableDossards">
+                <thead><tr><th>Concurrent</th><th>N° Dossard</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="Controles" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>🛠️ Contrôles Techniques et Administratifs</h2>
+            <label>N° Dossard :</label>
+            <input type="number" min="0" class="input-dossard" oninput="chargerPilote('Controles')">
+            <div id="verifControles"></div>
+            
+            <div id="formControles" style="display:none; margin-top:20px;" oninput="calculDirect('Controles')" onchange="calculDirect('Controles')">
+                <div class="grid">
+                    <div>
+                        <h3 id="titre_controles" style="border-bottom: 1px solid #eee; padding-bottom:5px; color: var(--police-red);">Pénalités Administratives : 0 pt</h3>
+                        <label>Tenue non réglementaire (<span id="lbl_p_tenue">500</span> pts) :</label>
+                        <select id="c_tenue"><option value="0">Non</option><option value="1">Oui</option></select>
+                        <label>Briefing manqué (<span id="lbl_p_briefing">2000</span> pts) :</label>
+                        <select id="c_briefing"><option value="0">Non</option><option value="1">Oui</option></select>
+                    </div>
+                    <div style="background: #fff3f3; padding: 15px; border-radius: 5px; border: 1px solid #ffcccc;">
+                        <p style="color:var(--police-red); margin-top:0;"><strong>⚠️ Motifs de DÉPART REFUSÉ :</strong></p>
+                        <label><input type="checkbox" id="c_admin_ko"> Papiers/Assurance/CT manquants</label>
+                        <label><input type="checkbox" id="c_moto_ko"> Moto non conforme Code Route</label>
+                    </div>
+                </div>
+                <button class="btn-green" style="margin-top:20px;" onclick="validerSaisie('Controles')">💾 Enregistrer les contrôles</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="Maniabilite" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>🏍️ Épreuve Maniabilité & Tir Laser</h2>
+            
+            <div style="background: #e9ecef; border: 1px solid #ccc; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: inline-block;">
+                <label style="margin-bottom: 5px; color: var(--police-blue);">🎯 Temps idéal Tir Laser (MM:SS) :</label>
+                <input type="text" id="t_ideal" class="time-mask" maxlength="5" placeholder="00:30" onchange="saveConfig()" style="font-size: 1.2em; width: 120px; text-align: center; font-weight: bold;">
+            </div>
+            
+            <div style="margin-top: 10px;">
+                <label>N° Dossard :</label>
+                <input type="number" min="0" class="input-dossard" oninput="chargerPilote('Maniabilite')">
+            </div>
+            <div id="verifManiabilite"></div>
+
+            <div id="formManiabilite" style="display:none; margin-top:20px;" oninput="calculDirect('Maniabilite')">
+                <div class="grid">
+                    <div>
+                        <h3 id="titre_maniabilite" style="border-bottom: 1px solid #eee; padding-bottom:5px; color: var(--police-red);">Maniabilité : 0 pt</h3>
+                        <label id="lbl_cones">Cônes/Piquets :</label><input type="number" id="m_cones" min="0" value="0">
+                        <label id="lbl_pieds">Pied à terre :</label><input type="number" id="m_pieds" min="0" value="0">
+                        <label id="lbl_atels">Ateliers ratés :</label><input type="number" id="m_atels" min="0" value="0">
+                        <label id="lbl_chute">Chutes :</label><input type="number" id="m_chute" min="0" value="0">
+                        <label>Chrono Mani (MM:SS) :</label><input type="text" id="m_chrono" class="time-mask" maxlength="5" placeholder="00:00">
+                    </div>
+                    <div>
+                        <h3 id="titre_tir" style="border-bottom: 1px solid #eee; padding-bottom:5px; color: var(--police-red);">Tir Laser : 0 pt</h3>
+                        <label id="lbl_t_rates">Tirs manqués :</label><input type="number" id="t_rates" min="0" value="0">
+                        <label>Temps du concurrent (MM:SS) :</label><input type="text" id="t_temps" class="time-mask" maxlength="5" placeholder="00:00">
+                    </div>
+                </div>
+                <button class="btn-green" style="margin-top:20px;" onclick="validerSaisie('Maniabilite')">💾 Enregistrer Mani/Tir</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="Orientation" class="tab-content" style="display:none;">
+        <div class="card">
+            <h2>🗺️ Parcours d'Orientation</h2>
+            
+            <div style="background: #e9ecef; border: 1px solid #ccc; padding: 15px; border-radius: 8px; margin-bottom: 25px; display: inline-block;">
+                <label style="margin-bottom: 5px; color: var(--police-blue);">📍 Kilométrage idéal (km) :</label>
+                <input type="number" id="o_dist_ideal" min="0" step="0.1" value="100.0" onchange="saveConfig()" style="font-size: 1.2em; width: 120px; text-align: center; font-weight: bold;">
+            </div>
+
+            <div style="background: #f0f7ff; padding: 15px; border-radius: 8px; border: 1px solid #cce5ff; margin-bottom: 20px;">
+                <h3 style="margin-top:0; color: var(--police-blue);">⚙️ Configuration Bases Chrono (commune)</h3>
+                <label>Nombre de Bases Chrono :</label>
+                <input type="number" id="p_nb_bases" min="1" max="10" value="2" onchange="saveConfig();">
+                <div id="container_bases_config" style="margin-top:10px;"></div>
+            </div>
+
+            <label>N° Dossard :</label>
+            <input type="number" min="0" class="input-dossard" oninput="chargerPilote('Orientation')">
+            <div id="verifOrientation"></div>
+<div id="formOrientation" style="display:none; margin-top:20px;" oninput="calculDirect('Orientation')">
+                
+    <div class="grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px dashed #ccc; margin-bottom: 25px;">
+        <div>
+            <h3 style="margin-top:0; border-bottom: 1px solid #ddd; padding-bottom:5px;">⏱️ Routier (Départage)</h3>
+            <label>Départ (HH:MM) :</label><input type="text" id="o_h_dep" class="time-mask" maxlength="5" placeholder="08:00">
+            <label>Arrivée (HH:MM) :</label><input type="text" id="o_h_arr" class="time-mask" maxlength="5" placeholder="10:30">
+            <div id="calc_temps" style="margin-top: 10px; font-weight:bold; color: var(--police-blue);">Durée : 00:00</div>
+        </div>
+        <div>
+            <h3 style="margin-top:0; border-bottom: 1px solid #ddd; padding-bottom:5px;">📍 Kilométrage</h3>
+            <label>Départ (km) :</label><input type="number" id="o_km_dep" min="0" step="0.1" value="0">
+            <label>Arrivée (km) :</label><input type="number" id="o_km_arr" min="0" step="0.1" value="0">
+            <div id="calc_dist" style="margin-top: 10px; font-weight:bold; color: var(--police-blue);">Distance : 0.0 km</div>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #ffcccc;">
+            <h3 id="titre_routier" style="margin-top:0; color: var(--police-red);">Routier & Vitesse : 0 pt</h3>
+            <label>CP manqués :</label><input type="number" id="r_cp" min="0" value="0">
+            <label>Excès &lt; 20km/h (<span id="lbl_p_v_l">20</span> pts/km) :</label>
+            <input type="number" id="r_v_l" min="0" max="20" placeholder="Max 20">
+            <label>Excès 21-39km/h (<span id="lbl_p_v_f">50</span> pts/km) :</label>
+            <select id="r_v_f">
+                <option value="0">0</option>
+                <option value="21">21</option>
+                <option value="22">22</option>
+                <option value="23">23</option>
+                <option value="24">24</option>
+                <option value="25">25</option>
+                <option value="26">26</option>
+                <option value="27">27</option>
+                <option value="28">28</option>
+                <option value="29">29</option>
+                <option value="30">30</option>
+                <option value="31">31</option>
+                <option value="32">32</option>
+                <option value="33">33</option>
+                <option value="34">34</option>
+                <option value="35">35</option>
+                <option value="36">36</option>
+                <option value="37">37</option>
+                <option value="38">38</option>
+                <option value="39">39</option>
+            </select>
+            <label style="color: red; font-weight: bold; margin-top:10px; display: block;">
+                <input type="checkbox" id="r_v_mhe" onchange="calculDirect('Orientation')"> 🚩 Excès > 40km/h (MHE)
+            </label>
+        </div>
+
+<div style="background: #f0f7ff; padding: 15px; border-radius: 8px; border: 1px solid #cce5ff;">
+    <h3 id="titre_regu" style="margin-top:0; color: var(--police-blue);">Bases Chrono : 0 pt</h3>
+
+    <div id="container_bases_chrono" style="margin-top:10px;"></div>
+
+</div>
+    </div>
+
+    <div style="margin-top:20px; display:flex; gap:10px;">
+        <button class="btn-green" onclick="validerSaisie('Orientation')">💾 Enregistrer l'Orientation</button>
+    </div>
+</div>
+        </div>
+    </div>
+
+<div id="Classement" class="tab-content" style="display:none;">
+    <div class="card">
+        <div style="display:flex; justify-content: space-between; align-items:center; flex-wrap: wrap; gap:10px; margin-bottom: 20px;">
+            <div class="nav-tabs" style="border:none;">
+                <button class="tab-link sub-tab active" onclick="filtrerClassement('General')">Général</button>
+                <button class="tab-link sub-tab" onclick="filtrerClassement('Maniabilite')">Maniabilité</button>
+                <button class="tab-link sub-tab" onclick="filtrerClassement('Regul')">Bases Chrono</button>
+                <button class="tab-link sub-tab" onclick="filtrerClassement('Tir')">Tir Laser</button>
+            </div>
+            <label style="background:#e9ecef; padding:8px; border-radius:5px; font-weight: bold; color: var(--police-blue);">
+                <input type="checkbox" id="filtre_police" onchange="filtrerClassement(currentClassementType)"> 👮 POLICE uniquement
+            </label>
+        </div>
+
+        <div id="zone_export_pdf" style="padding: 20px; background: white; font-family: Arial, sans-serif;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #003366; padding-bottom: 10px;">
+                <img src="logo_cmpn.png" style="height: 60px; width: auto;">
+                <div style="text-align: center; flex-grow: 1;">
+                    <h1 id="titre_pdf" style="color: #003366; margin: 0; font-size: 1.8em;">Classement Général - SCRATCH</h1>
+                    <p id="sous_titre_pdf" style="margin: 5px 0; color: #555; font-weight: bold;">Rallye CMPN 2026</p>
+                    <p id="date_heure_pdf" style="margin: 0; font-size: 0.8em; color: #888;"></p>
+                </div>
+                <img id="logo_region_pdf" src="logo_paca.png" style="height: 60px; width: auto;">
+            </div>
+
+            <table id="tableClassementSpecifique" style="width: 100%; border-collapse: collapse;">
+                <thead><tr id="headerClassement"></tr></thead>
+                <tbody id="bodyClassementSpecifique"></tbody>
+            </table>
+
+            <div id="zone_jury_pdf" style="margin-top: 15px; padding: 10px; border: 1px solid #d9e3f0; border-radius: 6px; background: #f8fbff;">
+                <div style="font-weight: bold; color: #003366; margin-bottom: 8px;">Composition du Jury</div>
+                <div id="pdf_jury_grid" style="width: 100%;"></div>
+            </div>
+        </div>
+        
+        <div style="margin-top:20px; display: flex; gap: 15px;">
+            <button class="btn-import" style="background:#cc0000; font-size: 1.1em; padding: 10px 20px;" onclick="exportFinalPDF()">📄 Télécharger le PDF Officiel</button>
+            <button class="btn-green" style="font-size: 1.1em; padding: 10px 20px;" onclick="exportFinalCSV()">📊 Exporter Excel</button>
+        </div>
+    </div>
+</div>
+
+<div id="Jury" class="tab-content">
+    <div class="card">
+        <h2>👥 Composition du Jury</h2>
+        <div class="grid" style="margin-bottom: 15px;">
+            <div>
+                <label>Nom du Président :</label>
+                <input type="text" id="jury_president" placeholder="Nom du président" oninput="saveJuryConfig()">
+            </div>
+            <div>
+                <label>Nom du Secrétaire :</label>
+                <input type="text" id="jury_secretaire" placeholder="Nom du secrétaire" oninput="saveJuryConfig()">
+            </div>
+        </div>
+        <div style="max-width: 300px; margin-bottom: 10px;">
+            <label>Nombre de jurés :</label>
+            <input type="number" id="jury_nb" min="0" max="20" value="0" onchange="saveJuryConfig()">
+        </div>
+        <div id="jury_noms_container" class="grid"></div>
+        <button id="btnEnregistrerJury" class="btn-green jury-save-btn" style="margin-top:15px;" onclick="enregistrerJury()">💾 Enregistrer</button>
+    </div>
+</div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
