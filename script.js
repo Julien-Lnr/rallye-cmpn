@@ -596,6 +596,30 @@ function updateUI() {
     }
     const dos = document.querySelector('#tableDossards tbody');
     if(dos) dos.innerHTML = concurrents.map(c => `<tr><td>${c.nom} ${c.prenom}</td><td>${c.dossard||'-'}</td></tr>`).join('');
+
+    const alerte = document.getElementById('alerteDossard');
+    const btnTirage = document.getElementById('btnTirage');
+    if (alerte) {
+        const nbInscrits = concurrents.length;
+        const nbDossards = concurrents.filter(c => Number.isFinite(c.dossard)).length;
+
+        if (nbInscrits === 0) {
+            alerte.textContent = 'Aucun inscrit';
+            alerte.className = 'status-alert alert-wait';
+        } else if (nbDossards === nbInscrits) {
+            alerte.textContent = `Tirage effectué (${nbInscrits} dossards attribués)`;
+            alerte.className = 'status-alert alert-ok';
+        } else {
+            alerte.textContent = `${nbInscrits} inscrit(s) - tirage en attente`;
+            alerte.className = 'status-alert alert-wait';
+        }
+    }
+
+    if (btnTirage) {
+        btnTirage.disabled = concurrents.length === 0;
+        btnTirage.style.opacity = concurrents.length === 0 ? '0.6' : '1';
+        btnTirage.style.cursor = concurrents.length === 0 ? 'not-allowed' : 'pointer';
+    }
 }
 
 function modifierConcurrent(index) {
@@ -640,6 +664,10 @@ function supprimerConcurrent(index) {
 }
 
 function attribuerDossards() {
+    if (concurrents.length === 0) {
+        alert('Aucun inscrit pour effectuer le tirage.');
+        return;
+    }
     if(concurrents.some(c=>c.dossard) && !confirm("Recommencer ?")) return;
     let nums = Array.from({length: concurrents.length}, (_, i) => i + 1).sort(() => Math.random() - 0.5);
     concurrents.forEach((c, i) => c.dossard = nums[i]);
