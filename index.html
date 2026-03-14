@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestion Rallye CMPN 2025</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="libs/html2pdf.bundle.min.js"></script>
-    <script src="libs/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css?v=20260314-1">
+    <script src="libs/html2pdf.bundle.min.js?v=20260314-1"></script>
+    <script src="libs/xlsx.full.min.js?v=20260314-1"></script>
 </head>
 <body>
 
@@ -26,6 +26,7 @@
     <button class="tab-link" onclick="openTab('Maniabilite')">5. Maniabilité & Tir</button>
     <button class="tab-link" onclick="openTab('Orientation')">6. Orientation & Bases Chrono</button>
     <button class="tab-link" onclick="openTab('Classement')">7. Classements</button>
+    <button class="tab-link" onclick="openTab('Reglement')">8. Règlement</button>
     
     <div style="margin-left: auto; display: flex; align-items: center; padding-right: 20px;">
         <div class="settings-icon" onclick="openTab('Points')" title="Paramètres des points" style="font-size: 35px; color: var(--police-blue);">⚙️</div>
@@ -338,8 +339,19 @@
     </div>
 </div>
 
+<div id="Reglement" class="tab-content" style="display:none;">
+    <div class="card">
+        <h2>📘 Règlement officiel</h2>
+        <div style="margin-bottom: 12px; display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="13_reglement_rallye_motos_police_2025.pdf" target="_blank" rel="noopener" class="btn-blue">🔎 Ouvrir dans un nouvel onglet</a>
+            <a href="13_reglement_rallye_motos_police_2025.pdf" download class="btn-green">⬇️ Télécharger le PDF</a>
+        </div>
+        <iframe src="13_reglement_rallye_motos_police_2025.pdf#toolbar=1" title="Règlement Rallye" style="width:100%; height:80vh; border:1px solid #ddd; border-radius:8px;"></iframe>
+    </div>
 </div>
 
-<script src="script.js"></script>
+</div>
+
+<script src="script.js?v=20260314-1"></script>
 </body>
 </html>

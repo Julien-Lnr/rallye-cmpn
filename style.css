@@ -67,6 +67,32 @@ button { background: var(--police-blue); color: white; padding: 12px 24px; borde
 .btn-red { background: var(--police-red); }
 .btn-import { background: #6f42c1; }
 
+a.btn-blue,
+a.btn-green,
+a.btn-red,
+a.btn-import {
+    color: #fff;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+a.btn-blue:hover,
+a.btn-green:hover,
+a.btn-red:hover,
+a.btn-import:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+}
+
 table { width: 100%; border-collapse: collapse; margin-top: 20px; }
 th, td { border: 1px solid #ddd; padding: 15px; text-align: left; }
 th { background: var(--police-blue); color: white; }
@@ -178,6 +204,14 @@ th { background: var(--police-blue); color: white; }
 
     button {
         padding: 10px 12px;
+    }
+
+    a.btn-blue,
+    a.btn-green,
+    a.btn-red,
+    a.btn-import {
+        width: 100%;
+        justify-content: center;
     }
 
     table {
