@@ -59,6 +59,41 @@ function save() {
     localStorage.setItem('rallyeConfig_2025', JSON.stringify(config));
 }
 
+function hasAnyAssignedDossard() {
+    return concurrents.some(c => Number.isFinite(c.dossard));
+}
+
+function getNextDossardNumber() {
+    const maxDossard = concurrents.reduce((max, c) => {
+        return Number.isFinite(c.dossard) ? Math.max(max, c.dossard) : max;
+    }, 0);
+    return maxDossard + 1;
+}
+
+function isPointsEntryStarted() {
+    return concurrents.some(c => {
+        if (!c || !c.det) return false;
+        if ((c.pointsAdmin || 0) > 0 || (c.pointsMani || 0) > 0 || (c.pointsTir || 0) > 0 || (c.pointsRoute || 0) > 0 || (c.pointsRegu || 0) > 0) {
+            return true;
+        }
+        if (c.manualMhe || c.mhe || (c.mheCount || 0) > 0) return true;
+
+        const d = c.det;
+        if ((d.c_tenue || 0) > 0 || d.c_briefing || d.c_admin_ko || d.c_moto_ko || d.r_v_mhe) return true;
+        if ((d.m_cones || 0) > 0 || (d.m_pieds || 0) > 0 || (d.m_atels || 0) > 0 || (d.m_chute || 0) > 0 || (d.t_rates || 0) > 0) return true;
+        if ((d.r_cp || 0) > 0 || (d.r_v_l || 0) > 0 || (d.r_v_f || 0) > 0) return true;
+        if ((d.o_km_dep || 0) > 0 || (d.o_km_arr || 0) > 0) return true;
+        if ((d.m_chrono || '').trim() !== '' || (d.t_temps || '').trim() !== '' || (d.o_h_dep || '').trim() !== '' || (d.o_h_arr || '').trim() !== '') return true;
+
+        for (let i = 1; i <= config.nb_bases; i++) {
+            if ((d[`reg${i}_dep`] || '').trim() !== '' || (d[`reg${i}_arr`] || '').trim() !== '' || (d[`reg${i}_f`] || 0) > 0) {
+                return true;
+            }
+        }
+        return false;
+    });
+}
+
 // === 5. IMPORTATION UNIVERSELLE (ODS, XLSX, CSV) ===
 function importerInscriptions(event) {
     const file = event.target.files[0];
@@ -101,6 +136,84 @@ function finaliserImportation() {
     }
     tempImportData = null; document.getElementById('mappingContainer').style.display = "none";
     save(); updateUI(); alert("Importation réussie !");
+}
+
+function exporterSauvegarde() {
+    const maintenant = new Date();
+    const payload = {
+        app: 'rallye-cmpn',
+        version: '1.0',
+        exportedAt: maintenant.toISOString(),
+        concurrents,
+        config
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sauvegarde_rallye_${maintenant.toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importerSauvegarde(event) {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const parsed = JSON.parse(e.target.result);
+            if (!parsed || typeof parsed !== 'object') throw new Error('Format JSON invalide.');
+            if (!Array.isArray(parsed.concurrents) || !parsed.config || typeof parsed.config !== 'object') {
+                throw new Error('Sauvegarde incomplète (concurrents/config manquants).');
+            }
+
+            if (!confirm('Importer cette sauvegarde va remplacer les données actuelles. Continuer ?')) return;
+
+            concurrents = parsed.concurrents.map(c => {
+                const pilote = creerPilote(
+                    String(c.nom || '').toUpperCase(),
+                    String(c.prenom || ''),
+                    c.spec === 'Police' ? 'Police' : 'Civil'
+                );
+                pilote.dossard = Number.isFinite(c.dossard) ? c.dossard : null;
+                pilote.det = (c.det && typeof c.det === 'object') ? c.det : {};
+                pilote.points = Number(c.points || 0);
+                pilote.pointsAdmin = Number(c.pointsAdmin || 0);
+                pilote.pointsMani = Number(c.pointsMani || 0);
+                pilote.pointsTir = Number(c.pointsTir || 0);
+                pilote.pointsRoute = Number(c.pointsRoute || 0);
+                pilote.pointsRegu = Number(c.pointsRegu || 0);
+                pilote.pointsRegul = Number(c.pointsRegul || pilote.pointsRegu || 0);
+                pilote.pointsManiabilite = Number(c.pointsManiabilite || pilote.pointsMani || 0);
+                pilote.chrono = Number(c.chrono || 0);
+                pilote.manualMhe = !!c.manualMhe;
+                pilote.mhe = !!c.mhe;
+                pilote.mheCount = Number(c.mheCount || 0);
+                return pilote;
+            });
+
+            config = Object.assign({}, defaultConfig, parsed.config);
+            if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
+            if (!Array.isArray(config.base_distances)) config.base_distances = [];
+            config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
+            config.nb_bases = Math.max(1, parseInt(config.nb_bases || defaultConfig.nb_bases, 10) || defaultConfig.nb_bases);
+
+            concurrents.forEach(recalculerPointsConcurrent);
+            editingRowIndex = -1;
+            save();
+            chargerConfigVisual();
+            updateUI();
+            refreshRuleLabels();
+            alert('Sauvegarde importée avec succès.');
+        } catch (err) {
+            alert(`Import impossible: ${err.message || 'fichier non valide'}`);
+        }
+    };
+    reader.readAsText(file, 'utf-8');
 }
 
 // === 6. BASES CHRONO DYNAMIQUES ===
@@ -616,9 +729,16 @@ function updateUI() {
     }
 
     if (btnTirage) {
-        btnTirage.disabled = concurrents.length === 0;
-        btnTirage.style.opacity = concurrents.length === 0 ? '0.6' : '1';
-        btnTirage.style.cursor = concurrents.length === 0 ? 'not-allowed' : 'pointer';
+        const locked = isPointsEntryStarted();
+        btnTirage.disabled = concurrents.length === 0 || locked;
+        btnTirage.style.opacity = (concurrents.length === 0 || locked) ? '0.6' : '1';
+        btnTirage.style.cursor = (concurrents.length === 0 || locked) ? 'not-allowed' : 'pointer';
+        btnTirage.title = locked ? 'Tirage verrouillé: la saisie des points a déjà commencé.' : '';
+    }
+
+    if (alerte && isPointsEntryStarted()) {
+        alerte.textContent = 'Tirage verrouillé: saisie des points déjà commencée.';
+        alerte.className = 'status-alert alert-ko';
     }
 }
 
@@ -668,6 +788,10 @@ function attribuerDossards() {
         alert('Aucun inscrit pour effectuer le tirage.');
         return;
     }
+    if (isPointsEntryStarted()) {
+        alert('Tirage aléatoire bloqué: des points ont déjà été saisis.');
+        return;
+    }
     if(concurrents.some(c=>c.dossard) && !confirm("Recommencer ?")) return;
     let nums = Array.from({length: concurrents.length}, (_, i) => i + 1).sort(() => Math.random() - 0.5);
     concurrents.forEach((c, i) => c.dossard = nums[i]);
@@ -682,11 +806,19 @@ function ajouterPilote() {
         alert('Veuillez renseigner le nom et le prénom.');
         return;
     }
-    concurrents.push(creerPilote(nom, prenom, spec));
+    const pilote = creerPilote(nom, prenom, spec);
+    if (isPointsEntryStarted() && hasAnyAssignedDossard()) {
+        pilote.dossard = getNextDossardNumber();
+    }
+    concurrents.push(pilote);
     document.getElementById('nom').value = '';
     document.getElementById('prenom').value = '';
     save();
     updateUI();
+
+    if (pilote.dossard) {
+        alert(`Concurrent ajouté avec le dossard n°${pilote.dossard}.`);
+    }
 }
 
 function exportInscriptions() {

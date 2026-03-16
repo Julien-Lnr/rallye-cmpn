@@ -85,6 +85,11 @@
                 </div>
             </div>
             <button class="btn-red" onclick="resetApp()">🚨 RESET COMPLET DE L'APPLICATION</button>
+            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-blue" onclick="exporterSauvegarde()">💾 Exporter sauvegarde complète (JSON)</button>
+                <button class="btn-import" onclick="document.getElementById('backupInput').click()">📥 Importer sauvegarde complète (JSON)</button>
+                <input type="file" id="backupInput" style="display:none;" accept=".json,application/json" onchange="importerSauvegarde(event)">
+            </div>
         </div>
     </div>
 
