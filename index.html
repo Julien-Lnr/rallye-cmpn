@@ -84,19 +84,19 @@
                     </div>
                 </div>
             </div>
-            <button class="btn-red" onclick="resetApp()">🚨 RESET COMPLET DE L'APPLICATION</button>
             <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn-blue" onclick="exporterSauvegarde()">💾 Exporter sauvegarde complète (JSON)</button>
-                <button class="btn-import" onclick="document.getElementById('backupInput').click()">📥 Importer sauvegarde complète (JSON)</button>
-                <input type="file" id="backupInput" style="display:none;" accept=".json,application/json" onchange="importerSauvegarde(event)">
+                <button class="btn-blue" onclick="exporterConcurrentsSeuls()">📤 Exporter concurrents</button>
+                <button class="btn-green" onclick="exporterConcurrentsAvecPoints()">📤 Exporter avec points</button>
+                <button class="btn-import" onclick="document.getElementById('dataInput').click()">📥 Importer</button>
+                <input type="file" id="dataInput" style="display:none;" accept=".xls,.xlsx,.ods" onchange="importerDonnees(event)">
             </div>
+            <div id="mappingContainer" style="display:none; margin-top: 15px;"></div>
         </div>
     </div>
 
     <div id="Inscriptions" class="tab-content" style="display:none;">
         <div class="card">
             <h2>📝 Inscription des Concurrents</h2>
-            <div id="mappingContainer" style="display:none; margin-bottom: 20px;"></div>
 
             <div class="grid">
                 <input type="text" id="nom" placeholder="NOM">
@@ -108,9 +108,6 @@
             </div>
             <div style="margin-top:20px; display: flex; gap: 10px; flex-wrap: wrap;">
                 <button onclick="ajouterPilote()">Ajouter manuellement</button>
-                <button class="btn-import" onclick="document.getElementById('fileInput').click()">📥 Importer Excel (CSV)</button>
-                <input type="file" id="fileInput" style="display:none;" accept=".csv" onchange="importerInscriptions(event)">
-                <button class="btn-green" onclick="exportInscriptions()">📤 Exporter Liste (CSV)</button>
             </div>
             <table id="tableInscrits">
                 <thead><tr><th>Nom</th><th>Prénom</th><th>Catégorie</th><th>Action</th></tr></thead>
@@ -317,7 +314,6 @@
         
         <div style="margin-top:20px; display: flex; gap: 15px;">
             <button class="btn-import" style="background:#cc0000; font-size: 1.1em; padding: 10px 20px;" onclick="exportFinalPDF()">📄 Télécharger le PDF Officiel</button>
-            <button class="btn-green" style="font-size: 1.1em; padding: 10px 20px;" onclick="exportFinalCSV()">📊 Exporter Excel</button>
         </div>
     </div>
 </div>

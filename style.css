@@ -103,7 +103,6 @@ th { background: var(--police-blue); color: white; }
 .alert-ko { background: #f8d7da; color: #721c24; border: 2px solid #f5c6cb; }
 
 .input-dossard { font-size: 2em; text-align: center; width: 200px; }
-#mappingContainer button { margin-top: 25px; padding: 12px 30px; }
 
 .btn-blue { background: #007bff; color: white; }
 .btn-blue:hover { background: #0056b3; }

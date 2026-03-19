@@ -10,8 +10,9 @@ document.head.appendChild(stylePDF);
 // === 2. VARIABLES GLOBALES ===
 let concurrents = JSON.parse(localStorage.getItem('rallyeData_2025')) || [];
 let currentClassementType = 'General';
-let tempImportData = null;
 let editingRowIndex = -1;
+let pendingImportHeaders = null;
+let pendingImportRows = null;
 
 const defaultConfig = { 
     pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
@@ -94,70 +95,342 @@ function isPointsEntryStarted() {
     });
 }
 
-// === 5. IMPORTATION UNIVERSELLE (ODS, XLSX, CSV) ===
-function importerInscriptions(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        tempImportData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        afficherSelecteurColonnes(tempImportData[0]);
-    };
-    reader.readAsArrayBuffer(file);
+// === 5. IMPORT / EXPORT DONNEES (XLS, XLSX, ODS) ===
+function exporterConcurrentsSeuls() {
+    const lignes = [
+        ['Dossard', 'Nom', 'Prenom', 'Categorie'],
+        ...concurrents.map(c => [c.dossard || '', c.nom || '', c.prenom || '', c.spec || 'Civil'])
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(lignes);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Concurrents');
+    XLSX.writeFile(workbook, `concurrents_${new Date().toISOString().slice(0, 10)}.xls`, { bookType: 'biff8' });
 }
 
-function afficherSelecteurColonnes(headers) {
-    const container = document.getElementById('mappingContainer');
-    container.innerHTML = `
-        <div class="card" style="border: 2px solid var(--police-blue); padding:15px;">
-            <h3>🔗 Correspondance des colonnes</h3>
-            <div class="grid">
-                <div><label>NOM :</label><select id="mapNom">${headers.map((h, i) => `<option value="${i}">${h}</option>`)}</select></div>
-                <div><label>PRÉNOM :</label><select id="mapPrenom">${headers.map((h, i) => `<option value="${i}">${h}</option>`)}</select></div>
-                <div><label>CATÉGORIE :</label><select id="mapSpec">${headers.map((h, i) => `<option value="${i}">${h}</option>`)}</select></div>
-            </div>
-            <button class="btn-green" style="margin-top:15px;" onclick="finaliserImportation()">Confirmer</button>
-        </div>`;
-    container.style.display = "block";
+function exporterConcurrentsAvecPoints() {
+    const lignes = [
+        ['Dossard', 'Nom', 'Prenom', 'Categorie', 'PointsTotal', 'PointsAdmin', 'PointsMani', 'PointsTir', 'PointsRoute', 'PointsRegu', 'ChronoManiSec', 'MHE'],
+        ...concurrents.map(c => [
+            c.dossard || '',
+            c.nom || '',
+            c.prenom || '',
+            c.spec || 'Civil',
+            Number(c.points || 0),
+            Number(c.pointsAdmin || 0),
+            Number(c.pointsMani || 0),
+            Number(c.pointsTir || 0),
+            Number(c.pointsRoute || 0),
+            Number(c.pointsRegu || 0),
+            Number(c.chrono || 0),
+            c.mhe ? 1 : 0
+        ])
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(lignes);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'ConcurrentsPoints');
+    XLSX.writeFile(workbook, `concurrents_points_${new Date().toISOString().slice(0, 10)}.ods`, { bookType: 'ods' });
 }
 
-function finaliserImportation() {
-    const idxNom = document.getElementById('mapNom').value, idxPrenom = document.getElementById('mapPrenom').value, idxSpec = document.getElementById('mapSpec').value;
-    for (let i = 1; i < tempImportData.length; i++) {
-        const row = tempImportData[i];
-        if (row[idxNom]) {
-            let cat = row[idxSpec] ? row[idxSpec].toString().toLowerCase() : "civil";
-            cat = (cat.includes('pol') || cat.includes('titul')) ? "Police" : "Civil";
-            concurrents.push(creerPilote(row[idxNom].toString().toUpperCase(), row[idxPrenom].toString(), cat));
-        }
+function normaliserEntete(value) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function trouverColonne(headers, aliases) {
+    const normalizedHeaders = headers.map(normaliserEntete);
+    for (const alias of aliases) {
+        const idx = normalizedHeaders.indexOf(normaliserEntete(alias));
+        if (idx >= 0) return idx;
     }
-    tempImportData = null; document.getElementById('mappingContainer').style.display = "none";
-    save(); updateUI(); alert("Importation réussie !");
+    return -1;
 }
 
-function exporterSauvegarde() {
-    const maintenant = new Date();
-    const payload = {
-        app: 'rallye-cmpn',
-        version: '1.0',
-        exportedAt: maintenant.toISOString(),
-        concurrents,
-        config
+function toNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
+function toBool(value) {
+    const txt = String(value || '').trim().toLowerCase();
+    return txt === '1' || txt === 'true' || txt === 'oui' || txt === 'yes';
+}
+
+function normalizeSpec(value) {
+    const txt = String(value || '').toLowerCase();
+    return (txt.includes('pol') || txt.includes('titul')) ? 'Police' : 'Civil';
+}
+
+function isRowNonEmpty(row) {
+    return Array.isArray(row) && row.some(cell => String(cell ?? '').trim() !== '');
+}
+
+function getHeadersAndDataRows(rows) {
+    const nonEmptyIndexes = [];
+    for (let i = 0; i < rows.length; i++) {
+        if (isRowNonEmpty(rows[i])) nonEmptyIndexes.push(i);
+        if (nonEmptyIndexes.length >= 20) break;
+    }
+
+    if (!nonEmptyIndexes.length) {
+        throw new Error('Le fichier est vide.');
+    }
+
+    let headerIndex = nonEmptyIndexes.find(idx => {
+        const candidateHeaders = rows[idx].map(h => String(h || '').trim());
+        return trouverColonne(candidateHeaders, ['Nom']) >= 0;
+    });
+
+    if (headerIndex === undefined) headerIndex = nonEmptyIndexes[0];
+
+    return {
+        headers: rows[headerIndex].map(h => String(h || '').trim()),
+        dataRows: rows.slice(headerIndex + 1)
+    };
+}
+
+function buildMappingOptions(headers, selectedIndex, required = false) {
+    const safeSelected = Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : (required ? 0 : -1);
+    const ignoreOption = `<option value="-1" ${safeSelected === -1 ? 'selected' : ''}>(Ignorer)</option>`;
+    const headerOptions = headers.map((h, i) => `<option value="${i}" ${safeSelected === i ? 'selected' : ''}>${h || `Colonne ${i + 1}`}</option>`).join('');
+    return `${ignoreOption}${headerOptions}`;
+}
+
+function afficherSelecteurColonnesImport(headers) {
+    const container = document.getElementById('mappingContainer');
+    if (!container) return;
+
+    const pre = {
+        nom: trouverColonne(headers, ['Nom']),
+        prenom: trouverColonne(headers, ['Prenom', 'Prénom']),
+        spec: trouverColonne(headers, ['Categorie', 'Catégorie', 'Spec', 'Specialite']),
+        dossard: trouverColonne(headers, ['Dossard', 'Numero', 'No']),
+        points: trouverColonne(headers, ['PointsTotal', 'Points']),
+        pointsAdmin: trouverColonne(headers, ['PointsAdmin']),
+        pointsMani: trouverColonne(headers, ['PointsMani', 'PointsManiabilite']),
+        pointsTir: trouverColonne(headers, ['PointsTir']),
+        pointsRoute: trouverColonne(headers, ['PointsRoute']),
+        pointsRegu: trouverColonne(headers, ['PointsRegu', 'PointsRegul']),
+        chrono: trouverColonne(headers, ['ChronoManiSec', 'Chrono']),
+        mhe: trouverColonne(headers, ['MHE', 'Mhe'])
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sauvegarde_rallye_${maintenant.toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    container.innerHTML = `
+        <div class="card" style="border: 2px solid var(--police-blue); padding: 15px; margin-bottom: 0;">
+            <h3 style="margin-top: 0;">🔗 Correspondance des colonnes d'import</h3>
+            <p style="margin-top: 0; color: #555;">La colonne NOM n'a pas ete detectee automatiquement. Associez les colonnes puis confirmez.</p>
+            <div class="grid">
+                <div><label>NOM (obligatoire) :</label><select id="map_nom">${buildMappingOptions(headers, pre.nom, true)}</select></div>
+                <div><label>Prenom :</label><select id="map_prenom">${buildMappingOptions(headers, pre.prenom)}</select></div>
+                <div><label>Categorie :</label><select id="map_spec">${buildMappingOptions(headers, pre.spec)}</select></div>
+                <div><label>Dossard :</label><select id="map_dossard">${buildMappingOptions(headers, pre.dossard)}</select></div>
+                <div><label>Points total :</label><select id="map_points">${buildMappingOptions(headers, pre.points)}</select></div>
+                <div><label>Points admin :</label><select id="map_pointsAdmin">${buildMappingOptions(headers, pre.pointsAdmin)}</select></div>
+                <div><label>Points mani :</label><select id="map_pointsMani">${buildMappingOptions(headers, pre.pointsMani)}</select></div>
+                <div><label>Points tir :</label><select id="map_pointsTir">${buildMappingOptions(headers, pre.pointsTir)}</select></div>
+                <div><label>Points route :</label><select id="map_pointsRoute">${buildMappingOptions(headers, pre.pointsRoute)}</select></div>
+                <div><label>Points bases chrono :</label><select id="map_pointsRegu">${buildMappingOptions(headers, pre.pointsRegu)}</select></div>
+                <div><label>Chrono mani (sec) :</label><select id="map_chrono">${buildMappingOptions(headers, pre.chrono)}</select></div>
+                <div><label>MHE :</label><select id="map_mhe">${buildMappingOptions(headers, pre.mhe)}</select></div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-green" onclick="finaliserImportMapping()">Confirmer l'import</button>
+                <button class="btn-red" onclick="annulerImportMapping()">Annuler</button>
+            </div>
+        </div>`;
+    container.style.display = 'block';
+    openTab('Points');
 }
 
-function importerSauvegarde(event) {
+function annulerImportMapping() {
+    pendingImportHeaders = null;
+    pendingImportRows = null;
+    const container = document.getElementById('mappingContainer');
+    if (container) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+    }
+}
+
+function readMappedColumn(row, idx) {
+    return idx >= 0 ? row[idx] : '';
+}
+
+function importerAvecMapping(dataRows, mapping) {
+    const imported = [];
+    for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        const nom = String(readMappedColumn(row, mapping.nom) || '').trim().toUpperCase();
+        if (!nom) continue;
+
+        const prenom = String(readMappedColumn(row, mapping.prenom) || '').trim();
+        const spec = mapping.spec >= 0 ? normalizeSpec(readMappedColumn(row, mapping.spec)) : 'Civil';
+        const pilote = creerPilote(nom, prenom, spec);
+
+        if (mapping.dossard >= 0) {
+            const d = toNumber(readMappedColumn(row, mapping.dossard), NaN);
+            pilote.dossard = Number.isFinite(d) ? Math.trunc(d) : null;
+        }
+
+        pilote.pointsAdmin = mapping.pointsAdmin >= 0 ? toNumber(readMappedColumn(row, mapping.pointsAdmin), 0) : 0;
+        pilote.pointsMani = mapping.pointsMani >= 0 ? toNumber(readMappedColumn(row, mapping.pointsMani), 0) : 0;
+        pilote.pointsTir = mapping.pointsTir >= 0 ? toNumber(readMappedColumn(row, mapping.pointsTir), 0) : 0;
+        pilote.pointsRoute = mapping.pointsRoute >= 0 ? toNumber(readMappedColumn(row, mapping.pointsRoute), 0) : 0;
+        pilote.pointsRegu = mapping.pointsRegu >= 0 ? toNumber(readMappedColumn(row, mapping.pointsRegu), 0) : 0;
+        pilote.pointsRegul = pilote.pointsRegu;
+        pilote.pointsManiabilite = pilote.pointsMani;
+        pilote.chrono = mapping.chrono >= 0 ? toNumber(readMappedColumn(row, mapping.chrono), 0) : 0;
+        pilote.manualMhe = mapping.mhe >= 0 ? toBool(readMappedColumn(row, mapping.mhe)) : false;
+
+        const hasDetail = mapping.pointsAdmin >= 0 || mapping.pointsMani >= 0 || mapping.pointsTir >= 0 || mapping.pointsRoute >= 0 || mapping.pointsRegu >= 0;
+        if (hasDetail) {
+            recalculerPointsConcurrent(pilote);
+        } else {
+            pilote.points = mapping.points >= 0 ? toNumber(readMappedColumn(row, mapping.points), 0) : 0;
+            pilote.mhe = pilote.manualMhe;
+            pilote.mheCount = pilote.manualMhe ? 1 : 0;
+        }
+
+        imported.push(pilote);
+    }
+    return imported;
+}
+
+function finaliserImportMapping() {
+    if (!pendingImportHeaders || !pendingImportRows) {
+        alert('Aucun import en attente.');
+        return;
+    }
+
+    const mapping = {
+        nom: parseInt(document.getElementById('map_nom')?.value || '-1', 10),
+        prenom: parseInt(document.getElementById('map_prenom')?.value || '-1', 10),
+        spec: parseInt(document.getElementById('map_spec')?.value || '-1', 10),
+        dossard: parseInt(document.getElementById('map_dossard')?.value || '-1', 10),
+        points: parseInt(document.getElementById('map_points')?.value || '-1', 10),
+        pointsAdmin: parseInt(document.getElementById('map_pointsAdmin')?.value || '-1', 10),
+        pointsMani: parseInt(document.getElementById('map_pointsMani')?.value || '-1', 10),
+        pointsTir: parseInt(document.getElementById('map_pointsTir')?.value || '-1', 10),
+        pointsRoute: parseInt(document.getElementById('map_pointsRoute')?.value || '-1', 10),
+        pointsRegu: parseInt(document.getElementById('map_pointsRegu')?.value || '-1', 10),
+        chrono: parseInt(document.getElementById('map_chrono')?.value || '-1', 10),
+        mhe: parseInt(document.getElementById('map_mhe')?.value || '-1', 10)
+    };
+
+    if (mapping.nom < 0) {
+        alert('La colonne NOM est obligatoire.');
+        return;
+    }
+
+    const imported = importerAvecMapping(pendingImportRows, mapping);
+    if (!imported.length) {
+        alert('Aucun concurrent valide trouve avec ce mapping.');
+        return;
+    }
+
+    concurrents = imported;
+    annulerImportMapping();
+    editingRowIndex = -1;
+    save();
+    chargerConfigVisual();
+    updateUI();
+    refreshRuleLabels();
+    alert('Import termine avec succes.');
+}
+
+function importerDepuisSauvegardeWorkbook(workbook) {
+    const configSheet = workbook.Sheets.config;
+    const concurrentsSheet = workbook.Sheets.concurrents;
+    if (!configSheet || !concurrentsSheet) return false;
+
+    const configRows = XLSX.utils.sheet_to_json(configSheet, { header: 1, defval: '' });
+    const concurrentRows = XLSX.utils.sheet_to_json(concurrentsSheet, { header: 1, defval: '' });
+    const configPayload = String(configRows?.[1]?.[0] || '').trim();
+    if (!configPayload) throw new Error('Configuration absente de la sauvegarde.');
+
+    const parsedConfig = JSON.parse(configPayload);
+    const parsedConcurrents = concurrentRows
+        .slice(1)
+        .map(row => {
+            const payloadCell = String(row?.[1] || '').trim();
+            return payloadCell ? JSON.parse(payloadCell) : null;
+        })
+        .filter(Boolean);
+
+    concurrents = parsedConcurrents.map(c => {
+        const pilote = creerPilote(
+            String(c.nom || '').toUpperCase(),
+            String(c.prenom || ''),
+            c.spec === 'Police' ? 'Police' : 'Civil'
+        );
+        pilote.dossard = Number.isFinite(c.dossard) ? c.dossard : null;
+        pilote.det = (c.det && typeof c.det === 'object') ? c.det : {};
+        pilote.points = Number(c.points || 0);
+        pilote.pointsAdmin = Number(c.pointsAdmin || 0);
+        pilote.pointsMani = Number(c.pointsMani || 0);
+        pilote.pointsTir = Number(c.pointsTir || 0);
+        pilote.pointsRoute = Number(c.pointsRoute || 0);
+        pilote.pointsRegu = Number(c.pointsRegu || 0);
+        pilote.pointsRegul = Number(c.pointsRegul || pilote.pointsRegu || 0);
+        pilote.pointsManiabilite = Number(c.pointsManiabilite || pilote.pointsMani || 0);
+        pilote.chrono = Number(c.chrono || 0);
+        pilote.manualMhe = !!c.manualMhe;
+        pilote.mhe = !!c.mhe;
+        pilote.mheCount = Number(c.mheCount || 0);
+        return pilote;
+    });
+
+    config = Object.assign({}, defaultConfig, parsedConfig);
+    if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
+    if (!Array.isArray(config.base_distances)) config.base_distances = [];
+    config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
+    config.nb_bases = Math.max(1, parseInt(config.nb_bases || defaultConfig.nb_bases, 10) || defaultConfig.nb_bases);
+    concurrents.forEach(recalculerPointsConcurrent);
+    return true;
+}
+
+function importerDepuisTableau(workbook) {
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    const { headers, dataRows } = getHeadersAndDataRows(rows);
+
+    const mapping = {
+        nom: trouverColonne(headers, ['Nom']),
+        prenom: trouverColonne(headers, ['Prenom', 'Prénom']),
+        spec: trouverColonne(headers, ['Categorie', 'Catégorie', 'Spec', 'Specialite']),
+        dossard: trouverColonne(headers, ['Dossard', 'Numero', 'No']),
+        points: trouverColonne(headers, ['PointsTotal', 'Points']),
+        pointsAdmin: trouverColonne(headers, ['PointsAdmin']),
+        pointsMani: trouverColonne(headers, ['PointsMani', 'PointsManiabilite']),
+        pointsTir: trouverColonne(headers, ['PointsTir']),
+        pointsRoute: trouverColonne(headers, ['PointsRoute']),
+        pointsRegu: trouverColonne(headers, ['PointsRegu', 'PointsRegul']),
+        chrono: trouverColonne(headers, ['ChronoManiSec', 'Chrono']),
+        mhe: trouverColonne(headers, ['MHE', 'Mhe'])
+    };
+
+    if (mapping.nom < 0) {
+        pendingImportHeaders = headers;
+        pendingImportRows = dataRows;
+        afficherSelecteurColonnesImport(headers);
+        return { pendingMapping: true };
+    }
+
+    const imported = importerAvecMapping(dataRows, mapping);
+
+    if (!imported.length) {
+        throw new Error('Aucun concurrent valide trouve dans le fichier.');
+    }
+
+    concurrents = imported;
+    return { pendingMapping: false };
+}
+
+function importerDonnees(event) {
     const file = event.target.files[0];
     event.target.value = '';
     if (!file) return;
@@ -165,55 +438,30 @@ function importerSauvegarde(event) {
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            const parsed = JSON.parse(e.target.result);
-            if (!parsed || typeof parsed !== 'object') throw new Error('Format JSON invalide.');
-            if (!Array.isArray(parsed.concurrents) || !parsed.config || typeof parsed.config !== 'object') {
-                throw new Error('Sauvegarde incomplète (concurrents/config manquants).');
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            if (!confirm('Importer ce fichier va remplacer les données actuelles. Continuer ?')) return;
+
+            if (!importerDepuisSauvegardeWorkbook(workbook)) {
+                const result = importerDepuisTableau(workbook);
+                if (result && result.pendingMapping) {
+                    alert('Import en attente: mappez les colonnes puis confirmez.');
+                    return;
+                }
             }
 
-            if (!confirm('Importer cette sauvegarde va remplacer les données actuelles. Continuer ?')) return;
-
-            concurrents = parsed.concurrents.map(c => {
-                const pilote = creerPilote(
-                    String(c.nom || '').toUpperCase(),
-                    String(c.prenom || ''),
-                    c.spec === 'Police' ? 'Police' : 'Civil'
-                );
-                pilote.dossard = Number.isFinite(c.dossard) ? c.dossard : null;
-                pilote.det = (c.det && typeof c.det === 'object') ? c.det : {};
-                pilote.points = Number(c.points || 0);
-                pilote.pointsAdmin = Number(c.pointsAdmin || 0);
-                pilote.pointsMani = Number(c.pointsMani || 0);
-                pilote.pointsTir = Number(c.pointsTir || 0);
-                pilote.pointsRoute = Number(c.pointsRoute || 0);
-                pilote.pointsRegu = Number(c.pointsRegu || 0);
-                pilote.pointsRegul = Number(c.pointsRegul || pilote.pointsRegu || 0);
-                pilote.pointsManiabilite = Number(c.pointsManiabilite || pilote.pointsMani || 0);
-                pilote.chrono = Number(c.chrono || 0);
-                pilote.manualMhe = !!c.manualMhe;
-                pilote.mhe = !!c.mhe;
-                pilote.mheCount = Number(c.mheCount || 0);
-                return pilote;
-            });
-
-            config = Object.assign({}, defaultConfig, parsed.config);
-            if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
-            if (!Array.isArray(config.base_distances)) config.base_distances = [];
-            config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
-            config.nb_bases = Math.max(1, parseInt(config.nb_bases || defaultConfig.nb_bases, 10) || defaultConfig.nb_bases);
-
-            concurrents.forEach(recalculerPointsConcurrent);
             editingRowIndex = -1;
             save();
             chargerConfigVisual();
             updateUI();
             refreshRuleLabels();
-            alert('Sauvegarde importée avec succès.');
+            alert('Import termine avec succes.');
         } catch (err) {
             alert(`Import impossible: ${err.message || 'fichier non valide'}`);
         }
     };
-    reader.readAsText(file, 'utf-8');
+    reader.readAsArrayBuffer(file);
 }
 
 // === 6. BASES CHRONO DYNAMIQUES ===
@@ -404,8 +652,8 @@ function filtrerClassement(type) {
         return pA - pB || (a.chrono || 0) - (b.chrono || 0);
     });
 
-    document.getElementById('headerClassement').innerHTML = "<th>Rang</th><th>Dossard</th><th>Concurrent</th><th>Cat.</th><th>Points</th><th>Chrono Mani</th>";
-    document.getElementById('bodyClassementSpecifique').innerHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom} ${c.prenom}</td><td>${c.spec}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td><td>${formatChrono(c.chrono)}</td></tr>`).join('');
+    document.getElementById('headerClassement').innerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Points</th><th>Chrono Mani</th>";
+    document.getElementById('bodyClassementSpecifique').innerHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td><td>${formatChrono(c.chrono)}</td></tr>`).join('');
     const classementLabel = type === 'Regul' ? 'Bases Chrono' : type;
     document.getElementById('titre_pdf').innerText = `Classement ${classementLabel} - ${isPolice ? 'POLICE' : 'SCRATCH'}`;
     refreshJuryPdf();
@@ -419,10 +667,6 @@ function exportFinalPDF() {
     refreshJuryPdf();
     const opt = { margin: 10, filename: `${document.getElementById('titre_pdf').innerText}.pdf`, image: { type: 'jpeg', quality: 1 }, html2canvas: { scale: 2, useCORS: true, scrollY: 0 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
     html2pdf().set(opt).from(document.getElementById("zone_export_pdf")).save().then(() => window.scrollTo(0, scrollPos));
-}
-
-function exportFinalCSV() {
-    XLSX.writeFile(XLSX.utils.table_to_book(document.getElementById("tableClassementSpecifique")), "Classement_Rallye.xlsx");
 }
 
 // === 9. FONCTIONS DE BASE ===
@@ -819,22 +1063,6 @@ function ajouterPilote() {
     if (pilote.dossard) {
         alert(`Concurrent ajouté avec le dossard n°${pilote.dossard}.`);
     }
-}
-
-function exportInscriptions() {
-    const lignes = [['Nom', 'Prénom', 'Catégorie']];
-    concurrents.forEach(c => lignes.push([c.nom, c.prenom, c.spec]));
-    const csv = lignes
-        .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'))
-        .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'inscriptions_rallye.csv';
-    a.click();
-    URL.revokeObjectURL(url);
 }
 
 function boutonMHE() {
