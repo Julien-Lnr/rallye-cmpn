@@ -18,14 +18,21 @@ const defaultConfig = {
     pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
     t_ideal: 30, region: 'paca', nb_bases: 2, o_dist_ideal: 100, o_tol_dist: 2, o_pen_dist: 100, pen_non_passage: 20000,
     tenue: 500, briefing: 2000, v_l: 20, v_f: 50, mhe_points: 100000,
-    jury_president: '', jury_secretaire: '', jury_nb: 0, jury_noms: [], base_distances: []
+    jury_president: '', jury_secretaire: '', jury_nb: 0, jury_noms: [], base_distances: [],
+    participant_categories: ['Police', 'Civil'], classement_categories: []
 };
 let config = Object.assign({}, defaultConfig, JSON.parse(localStorage.getItem('rallyeConfig_2025')) || {});
 if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
 if (!Array.isArray(config.base_distances)) config.base_distances = [];
+if (!Array.isArray(config.participant_categories)) config.participant_categories = [];
+if (!Array.isArray(config.classement_categories)) config.classement_categories = [];
 config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
+config.participant_categories = normalizeCategoryList(config.participant_categories);
+config.classement_categories = normalizeCategoryList(config.classement_categories);
+if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
+if (!config.classement_categories.length) config.classement_categories = [...config.participant_categories];
 
-window.onload = () => { chargerConfigVisual(); updateUI(); refreshRuleLabels(); };
+window.onload = () => { chargerConfigVisual(); updateUI(); renderClassementCategoryFilters(); refreshRuleLabels(); };
 
 // === 3. AUTO-FORMATTAGE CHRONOS ===
 document.addEventListener('input', function(e) {
@@ -159,9 +166,90 @@ function toBool(value) {
     return txt === '1' || txt === 'true' || txt === 'oui' || txt === 'yes';
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function normalizeCategoryLabel(value) {
+    return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeCategoryList(value) {
+    const raw = Array.isArray(value) ? value : String(value ?? '').split(/[\n,;|]+/);
+    const categories = [];
+    raw.map(normalizeCategoryLabel).filter(Boolean).forEach(category => {
+        if (!categories.some(existing => existing.toLowerCase() === category.toLowerCase())) {
+            categories.push(category);
+        }
+    });
+    return categories;
+}
+
+function getConfiguredCategories() {
+    return normalizeCategoryList(config.participant_categories);
+}
+
+function getDefaultCategory() {
+    return getConfiguredCategories()[0] || 'Civil';
+}
+
 function normalizeSpec(value) {
-    const txt = String(value || '').toLowerCase();
-    return (txt.includes('pol') || txt.includes('titul')) ? 'Police' : 'Civil';
+    const label = normalizeCategoryLabel(value);
+    if (!label) return getDefaultCategory();
+    const match = getConfiguredCategories().find(category => category.toLowerCase() === label.toLowerCase());
+    return match || label;
+}
+
+function buildCategoryOptions(selectedValue) {
+    const categories = getConfiguredCategories();
+    const selectedLabel = normalizeCategoryLabel(selectedValue) || getDefaultCategory();
+    const optionValues = categories.some(category => category.toLowerCase() === selectedLabel.toLowerCase())
+        ? categories
+        : [selectedLabel, ...categories];
+
+    return optionValues.map(category => {
+        const isSelected = category.toLowerCase() === selectedLabel.toLowerCase();
+        return `<option value="${escapeHtml(category)}" ${isSelected ? 'selected' : ''}>${escapeHtml(category)}</option>`;
+    }).join('');
+}
+
+function refreshCategorySelectors() {
+    const specSelect = document.getElementById('spec');
+    if (!specSelect) return;
+    const currentSpec = specSelect.value;
+    specSelect.innerHTML = buildCategoryOptions(currentSpec);
+}
+
+function renderClassementCategoryFilters() {
+    const container = document.getElementById('classement_categories_container');
+    if (!container) return;
+
+    const categories = getConfiguredCategories();
+    const selected = normalizeCategoryList(config.classement_categories);
+    const selection = new Set((selected.length ? selected : categories).map(category => category.toLowerCase()));
+
+    container.innerHTML = categories.map(category => `
+        <label style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#fff; border:1px solid #cfd8e3; border-radius:999px;">
+            <input type="checkbox" class="classement-category-checkbox" value="${escapeHtml(category)}" ${selection.has(category.toLowerCase()) ? 'checked' : ''} onchange="saveClassementCategories()">
+            <span>${escapeHtml(category)}</span>
+        </label>
+    `).join('');
+}
+
+function saveClassementCategories() {
+    const categories = getConfiguredCategories();
+    const selected = Array.from(document.querySelectorAll('.classement-category-checkbox'))
+        .filter(input => input.checked)
+        .map(input => normalizeCategoryLabel(input.value));
+    const nextSelection = categories.filter(category => selected.some(value => value.toLowerCase() === category.toLowerCase()));
+    config.classement_categories = nextSelection.length ? nextSelection : [...categories];
+    save();
+    filtrerClassement(currentClassementType);
 }
 
 function isRowNonEmpty(row) {
@@ -267,7 +355,7 @@ function importerAvecMapping(dataRows, mapping) {
         if (!nom) continue;
 
         const prenom = String(readMappedColumn(row, mapping.prenom) || '').trim();
-        const spec = mapping.spec >= 0 ? normalizeSpec(readMappedColumn(row, mapping.spec)) : 'Civil';
+        const spec = mapping.spec >= 0 ? normalizeSpec(readMappedColumn(row, mapping.spec)) : getDefaultCategory();
         const pilote = creerPilote(nom, prenom, spec);
 
         if (mapping.dossard >= 0) {
@@ -337,6 +425,7 @@ function finaliserImportMapping() {
     save();
     chargerConfigVisual();
     updateUI();
+    renderClassementCategoryFilters();
     refreshRuleLabels();
     alert('Import termine avec succes.');
 }
@@ -364,7 +453,7 @@ function importerDepuisSauvegardeWorkbook(workbook) {
         const pilote = creerPilote(
             String(c.nom || '').toUpperCase(),
             String(c.prenom || ''),
-            c.spec === 'Police' ? 'Police' : 'Civil'
+            normalizeSpec(c.spec)
         );
         pilote.dossard = Number.isFinite(c.dossard) ? c.dossard : null;
         pilote.det = (c.det && typeof c.det === 'object') ? c.det : {};
@@ -386,8 +475,17 @@ function importerDepuisSauvegardeWorkbook(workbook) {
     config = Object.assign({}, defaultConfig, parsedConfig);
     if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
     if (!Array.isArray(config.base_distances)) config.base_distances = [];
+    if (!Array.isArray(config.participant_categories)) config.participant_categories = [];
+    if (!Array.isArray(config.classement_categories)) config.classement_categories = [];
     config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
     config.nb_bases = Math.max(1, parseInt(config.nb_bases || defaultConfig.nb_bases, 10) || defaultConfig.nb_bases);
+    config.participant_categories = normalizeCategoryList(config.participant_categories);
+    config.classement_categories = normalizeCategoryList(config.classement_categories);
+    if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
+    config.classement_categories = config.classement_categories.filter(category =>
+        config.participant_categories.some(available => available.toLowerCase() === category.toLowerCase())
+    );
+    if (!config.classement_categories.length) config.classement_categories = [...config.participant_categories];
     concurrents.forEach(recalculerPointsConcurrent);
     return true;
 }
@@ -636,8 +734,10 @@ function calculDirect(onglet) {
 function filtrerClassement(type) {
     currentClassementType = type;
     document.querySelectorAll('.sub-tab').forEach(btn => btn.classList.toggle('active', btn.getAttribute('onclick').includes(type)));
-    const isPolice = document.getElementById('filtre_police').checked;
-    let liste = isPolice ? concurrents.filter(c => c.spec === 'Police') : [...concurrents];
+    const selectedCategories = normalizeCategoryList(config.classement_categories);
+    const availableCategories = getConfiguredCategories();
+    const activeCategories = selectedCategories.length ? selectedCategories : availableCategories;
+    let liste = concurrents.filter(c => activeCategories.some(category => normalizeSpec(c.spec).toLowerCase() === category.toLowerCase()));
 
     const getClassementPoints = (concurrent) => {
         const raw = type === 'General' ? concurrent.points : concurrent[`points${type}`];
@@ -653,9 +753,12 @@ function filtrerClassement(type) {
     });
 
     document.getElementById('headerClassement').innerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Points</th><th>Chrono Mani</th>";
-    document.getElementById('bodyClassementSpecifique').innerHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td><td>${formatChrono(c.chrono)}</td></tr>`).join('');
+    document.getElementById('bodyClassementSpecifique').innerHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td><td>${formatChrono(c.chrono)}</td></tr>`).join('');
     const classementLabel = type === 'Regul' ? 'Bases Chrono' : type;
-    document.getElementById('titre_pdf').innerText = `Classement ${classementLabel} - ${isPolice ? 'POLICE' : 'SCRATCH'}`;
+    const categoriesLabel = activeCategories.length === availableCategories.length
+        ? 'SCRATCH'
+        : activeCategories.join(' / ');
+    document.getElementById('titre_pdf').innerText = `Classement ${classementLabel} - ${categoriesLabel}`;
     refreshJuryPdf();
 }
 
@@ -770,6 +873,12 @@ function saveConfig() {
     config.t_ideal = parseChrono(document.getElementById('t_ideal')?.value || secondsToChrono(config.t_ideal));
     config.o_dist_ideal = parseFloat(document.getElementById('o_dist_ideal')?.value || config.o_dist_ideal);
     config.nb_bases = parseInt(document.getElementById('p_nb_bases')?.value || config.nb_bases, 10);
+    config.participant_categories = normalizeCategoryList(document.getElementById('categories_spec')?.value || config.participant_categories);
+    if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
+    config.classement_categories = normalizeCategoryList(config.classement_categories).filter(category =>
+        config.participant_categories.some(available => available.toLowerCase() === category.toLowerCase())
+    );
+    if (!config.classement_categories.length) config.classement_categories = [...config.participant_categories];
     config.base_distances = Array.from({ length: config.nb_bases }, (_, idx) => {
         const i = idx + 1;
         const inputValue = document.getElementById(`base_cfg_dist_${i}`)?.value;
@@ -779,6 +888,9 @@ function saveConfig() {
     });
     save();
     genererChampsBases();
+    refreshCategorySelectors();
+    renderClassementCategoryFilters();
+    updateUI();
     refreshRuleLabels();
 }
 
@@ -787,6 +899,8 @@ function chargerConfigVisual() {
         const el = document.getElementById(id);
         if (el) el.value = value;
     };
+
+    refreshCategorySelectors();
 
     setValue('p_pied', config.pied);
     setValue('p_cone', config.cone);
@@ -808,6 +922,7 @@ function chargerConfigVisual() {
     setValue('t_ideal', secondsToChrono(config.t_ideal));
     setValue('o_dist_ideal', config.o_dist_ideal);
     setValue('p_nb_bases', config.nb_bases);
+    setValue('categories_spec', getConfiguredCategories().join('\n'));
     setValue('choix_region', config.region);
     setValue('jury_president', config.jury_president || '');
     setValue('jury_secretaire', config.jury_secretaire || '');
@@ -817,6 +932,7 @@ function chargerConfigVisual() {
     if (img) img.src = `logo_${config.region}.png`;
     genererChampsBases();
     renderJuryInputs();
+    renderClassementCategoryFilters();
     refreshJuryPdf();
     refreshRuleLabels();
 }
@@ -935,10 +1051,7 @@ function updateUI() {
                         <td><input type="text" id="edit_nom_${i}" value="${c.nom}"></td>
                         <td><input type="text" id="edit_prenom_${i}" value="${c.prenom}"></td>
                         <td>
-                            <select id="edit_spec_${i}">
-                                <option value="Police" ${c.spec === 'Police' ? 'selected' : ''}>Police</option>
-                                <option value="Civil" ${c.spec === 'Civil' ? 'selected' : ''}>Civil</option>
-                            </select>
+                            <select id="edit_spec_${i}">${buildCategoryOptions(c.spec)}</select>
                         </td>
                         <td class="cell-actions">
                             <button class="btn-green" onclick="enregistrerModificationConcurrent(${i})">Enregistrer</button>
@@ -997,7 +1110,7 @@ function enregistrerModificationConcurrent(index) {
 
     const nomNet = (document.getElementById(`edit_nom_${index}`)?.value || '').trim().toUpperCase();
     const prenomNet = (document.getElementById(`edit_prenom_${index}`)?.value || '').trim();
-    const specNet = document.getElementById(`edit_spec_${index}`)?.value || 'Civil';
+    const specNet = normalizeSpec(document.getElementById(`edit_spec_${index}`)?.value || getDefaultCategory());
 
     if (!nomNet || !prenomNet) {
         alert('Nom et prénom obligatoires.');
@@ -1045,7 +1158,7 @@ function attribuerDossards() {
 function ajouterPilote() {
     const nom = (document.getElementById('nom')?.value || '').trim().toUpperCase();
     const prenom = (document.getElementById('prenom')?.value || '').trim();
-    const spec = document.getElementById('spec')?.value || 'Civil';
+    const spec = normalizeSpec(document.getElementById('spec')?.value || getDefaultCategory());
     if (!nom || !prenom) {
         alert('Veuillez renseigner le nom et le prénom.');
         return;

@@ -56,6 +56,13 @@
                 </div>
             </div>
 
+            <div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #eee;">
+                <h3 style="color: var(--police-blue); margin-top:0;">👥 Catégories des participants</h3>
+                <label for="categories_spec">Liste des catégories disponibles (une par ligne ou séparées par des virgules) :</label>
+                <textarea id="categories_spec" rows="4" oninput="saveConfig()" style="width:100%; min-height: 90px; padding: 10px; border:1px solid #ccc; border-radius:6px; font-family: inherit;"></textarea>
+                <div style="margin-top:6px; color:#666; font-size:0.9em;">Exemple : Police, Civil, Gendarmerie</div>
+            </div>
+
             <div class="grid" style="margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 20px;">
                 <div>
                     <h3 style="color: var(--police-blue); margin-top:0;">🏍️ Maniabilité & Tir</h3>
@@ -285,9 +292,14 @@
                 <button class="tab-link sub-tab" onclick="filtrerClassement('Regul')">Bases Chrono</button>
                 <button class="tab-link sub-tab" onclick="filtrerClassement('Tir')">Tir Laser</button>
             </div>
-            <label style="background:#e9ecef; padding:8px; border-radius:5px; font-weight: bold; color: var(--police-blue);">
-                <input type="checkbox" id="filtre_police" onchange="filtrerClassement(currentClassementType)"> 👮 POLICE uniquement
-            </label>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 12px; background: #f4f7fb; border: 1px solid #d9e3f0; border-radius: 8px;">
+            <div style="display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap: wrap; margin-bottom: 8px;">
+                <strong style="color: var(--police-blue);">Catégories incluses dans le classement</strong>
+                <span style="font-size: 0.9em; color: #666;">Décochez celles que vous ne voulez pas afficher</span>
+            </div>
+            <div id="classement_categories_container" style="display:flex; flex-wrap: wrap; gap: 8px;"></div>
         </div>
 
         <div id="zone_export_pdf" style="padding: 20px; background: white; font-family: Arial, sans-serif;">
