@@ -826,6 +826,115 @@ function exportFinalPDF() {
     html2pdf().set(opt).from(document.getElementById("zone_export_pdf")).save().then(() => window.scrollTo(0, scrollPos));
 }
 
+function imprimerFeuilleBaseChrono() {
+    const nbBases = Math.max(1, parseInt(config.nb_bases || 1, 10) || 1);
+    const liste = [...concurrents].sort((a, b) => {
+        const dA = Number.isFinite(a.dossard) ? a.dossard : Number.MAX_SAFE_INTEGER;
+        const dB = Number.isFinite(b.dossard) ? b.dossard : Number.MAX_SAFE_INTEGER;
+        if (dA !== dB) return dA - dB;
+        const nomA = (a.nom || '').toString();
+        const nomB = (b.nom || '').toString();
+        return nomA.localeCompare(nomB, 'fr', { sensitivity: 'base' });
+    });
+
+    if (!liste.length) {
+        alert('Aucun concurrent à imprimer.');
+        return;
+    }
+
+    const dossardWidth = 10;
+    const nomWidth = 15;
+    const prenomWidth = 13;
+    const piedsWidth = 8;
+    const heureWidth = (100 - dossardWidth - nomWidth - prenomWidth - piedsWidth) / (nbBases * 2);
+
+    const baseHeaders = Array.from({ length: nbBases }, (_, i) => {
+        const sepClass = i < nbBases - 1 ? ' class="base-end"' : '';
+        return `<th>Départ B${i + 1}</th><th${sepClass}>Arrivée B${i + 1}</th>`;
+    }).join('');
+    const baseCols = Array.from({ length: nbBases * 2 }, () => `<col style="width: ${heureWidth}%">`).join('');
+
+    const rows = liste.map(c => `
+        <tr>
+            <td>${Number.isFinite(c.dossard) ? c.dossard : '-'}</td>
+            <td>${escapeHtml(c.nom || '')}</td>
+            <td>${escapeHtml(c.prenom || '')}</td>
+            ${Array.from({ length: nbBases }, (_, i) => {
+                const sepClass = i < nbBases - 1 ? ' class="base-end"' : '';
+                return `<td>&nbsp;</td><td${sepClass}>&nbsp;</td>`;
+            }).join('')}
+            <td>&nbsp;</td>
+        </tr>
+    `).join('');
+
+    const title = 'Feuille Base Chrono';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        alert('Impossible d ouvrir la fenêtre d impression.');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!doctype html>
+        <html lang="fr">
+        <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+                @page { size: A4 portrait; margin: 12mm; }
+                body { font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                h1 { margin: 0 0 4mm 0; font-size: 20px; }
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                table, th, td { border: 1.6px solid #000; }
+                th, td { padding: 8px; font-size: 13px; box-sizing: border-box; overflow: hidden; }
+                th { background: #f1f1f1; text-align: left; }
+                td { height: 28px; }
+                tbody tr:nth-child(odd) { background: #ffffff; }
+                tbody tr:nth-child(even) { background: #f3f3f3; }
+                th:nth-child(1), td:nth-child(1) { text-align: center; }
+                th:nth-child(1) { font-size: 12px; white-space: nowrap; }
+                th, td { word-break: break-word; overflow-wrap: anywhere; }
+                th:nth-child(n+4), td:nth-child(n+4) { text-align: center; }
+                th.base-end, td.base-end { border-right: 2.4px solid #000 !important; }
+                @media print {
+                    table, th, td { border: 1.6px solid #000 !important; }
+                    tbody tr:nth-child(odd) { background: #ffffff !important; }
+                    tbody tr:nth-child(even) { background: #f3f3f3 !important; }
+                    th.base-end, td.base-end { border-right: 2.4px solid #000 !important; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${title}</h1>
+            <table>
+                <colgroup>
+                    <col style="width: ${dossardWidth}%">
+                    <col style="width: ${nomWidth}%">
+                    <col style="width: ${prenomWidth}%">
+                    ${baseCols}
+                    <col style="width: ${piedsWidth}%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Dossard</th>
+                        <th>NOM</th>
+                        <th>Prénom</th>
+                        ${baseHeaders}
+                        <th>Pieds à terre</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
+
 // === 9. FONCTIONS DE BASE ===
 function validerSaisie(onglet) {
     const doss = parseInt(document.querySelector(`#${onglet} .input-dossard`).value);
