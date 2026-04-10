@@ -752,9 +752,63 @@ function filtrerClassement(type) {
         return pA - pB || (a.chrono || 0) - (b.chrono || 0);
     });
 
-    document.getElementById('headerClassement').innerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Points</th><th>Chrono Mani</th>";
-    document.getElementById('bodyClassementSpecifique').innerHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td><td>${formatChrono(c.chrono)}</td></tr>`).join('');
-    const classementLabel = type === 'Regul' ? 'Bases Chrono' : type;
+    let headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Points</th>";
+    let bodyHTML = '';
+
+    if (type === 'General') {
+        // Classement Général: pas de Chrono Mani
+        bodyHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`).join('');
+    } else if (type === 'Maniabilite') {
+        // Classement Maniabilité: Cônes, Pieds, Ateliers, Chutes, Chrono
+        headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Cônes/Piquets</th><th>Pieds à terre</th><th>Ateliers ratés</th><th>Chutes</th><th>Chrono (MM:SS)</th><th>Points</th>";
+        bodyHTML = liste.map((c, i) => {
+            const cones = c.det?.m_cones || 0;
+            const pieds = c.det?.m_pieds || 0;
+            const ateliers = c.det?.m_atels || 0;
+            const chutes = c.det?.m_chute || 0;
+            const chrono = formatChrono(c.chrono);
+            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${cones}</td><td>${pieds}</td><td>${ateliers}</td><td>${chutes}</td><td>${chrono}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+        }).join('');
+    } else if (type === 'Regul') {
+        // Classement Bases Chrono: afficher les chrono de chaque base
+        const nbBases = config.nb_bases || 1;
+        headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th>";
+        for (let i = 1; i <= nbBases; i++) {
+            const distBase = Number(config.base_distances?.[i - 1] ?? 0);
+            const idealSec = Math.round((Math.max(0, distBase) / 50) * 3600);
+            const baseLabel = `Base ${i} (${formatHMS(idealSec)})`;
+            headerHTML += `<th>${baseLabel}</th>`;
+        }
+        headerHTML += "<th>Pied/Arrêt en zone</th><th>Points</th>";
+        bodyHTML = liste.map((c, idx) => {
+            let row = `<tr><td>${idx+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td>`;
+            let totalPiedsArretsZone = 0;
+            for (let i = 1; i <= nbBases; i++) {
+                const dep = c.det?.[`reg${i}_dep`] || '';
+                const arr = c.det?.[`reg${i}_arr`] || '';
+                const depSec = parseHMS(dep);
+                const arrSec = parseHMS(arr);
+                const chronoSec = calculerDureeHms(depSec, arrSec);
+                const chrono = (depSec > 0 && arrSec > 0) ? formatHMS(chronoSec) : '-';
+                totalPiedsArretsZone += parseInt(c.det?.[`reg${i}_f`] || '0', 10) || 0;
+                row += `<td>${chrono}</td>`;
+            }
+            row += `<td>${totalPiedsArretsZone}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+            return row;
+        }).join('');
+    } else if (type === 'Tir') {
+        // Classement Tir: Tirs manqués, Temps concurrent
+        headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Tirs manqués</th><th>Temps (MM:SS)</th><th>Points</th>";
+        bodyHTML = liste.map((c, i) => {
+            const tirsManques = c.det?.t_rates || 0;
+            const temps = formatChrono(parseChrono(c.det?.t_temps || ""));
+            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${tirsManques}</td><td>${temps}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+        }).join('');
+    }
+
+    document.getElementById('headerClassement').innerHTML = headerHTML;
+    document.getElementById('bodyClassementSpecifique').innerHTML = bodyHTML;
+    const classementLabel = type === 'Regul' ? 'Bases Chrono' : type === 'Maniabilite' ? 'Maniabilité' : type === 'Tir' ? 'Tir Laser' : type;
     const categoriesLabel = activeCategories.length === availableCategories.length
         ? 'SCRATCH'
         : activeCategories.join(' / ');
