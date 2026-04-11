@@ -935,6 +935,105 @@ function imprimerFeuilleBaseChrono() {
     printWindow.print();
 }
 
+function imprimerFeuilleManiabiliteTir() {
+    const liste = [...concurrents].sort((a, b) => {
+        const dA = Number.isFinite(a.dossard) ? a.dossard : Number.MAX_SAFE_INTEGER;
+        const dB = Number.isFinite(b.dossard) ? b.dossard : Number.MAX_SAFE_INTEGER;
+        if (dA !== dB) return dA - dB;
+        const nomA = (a.nom || '').toString();
+        const nomB = (b.nom || '').toString();
+        return nomA.localeCompare(nomB, 'fr', { sensitivity: 'base' });
+    });
+
+    if (!liste.length) {
+        alert('Aucun concurrent à imprimer.');
+        return;
+    }
+
+    const rows = liste.map(c => `
+        <tr>
+            <td>${Number.isFinite(c.dossard) ? c.dossard : '-'}</td>
+            <td>${escapeHtml(c.nom || '')}</td>
+            <td>${escapeHtml(c.prenom || '')}</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+            <td>&nbsp;</td>
+        </tr>
+    `).join('');
+
+    const title = 'Feuille Maniabilité et Tir';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        alert('Impossible d ouvrir la fenêtre d impression.');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!doctype html>
+        <html lang="fr">
+        <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+                @page { size: A4 landscape; margin: 10mm; }
+                body { font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                h1 { margin: 0 0 4mm 0; font-size: 20px; }
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                table, th, td { border: 1.4px solid #000; }
+                th, td { padding: 6px; font-size: 12px; box-sizing: border-box; overflow: hidden; }
+                th { background: #f1f1f1; text-align: center; vertical-align: middle; }
+                td { height: 28px; text-align: center; }
+                td:nth-child(2), td:nth-child(3) { text-align: left; }
+                @media print {
+                    table, th, td { border: 1.4px solid #000 !important; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${title}</h1>
+            <table>
+                <colgroup>
+                    <col style="width: 7%">
+                    <col style="width: 12%">
+                    <col style="width: 12%">
+                    <col style="width: 9%">
+                    <col style="width: 9%">
+                    <col style="width: 10%">
+                    <col style="width: 8%">
+                    <col style="width: 12%">
+                    <col style="width: 9%">
+                    <col style="width: 12%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Dossard</th>
+                        <th>NOM</th>
+                        <th>Prénom</th>
+                        <th>Cônes/Piquets :</th>
+                        <th>Pied à terre :</th>
+                        <th>Ateliers ratés :</th>
+                        <th>Chutes :</th>
+                        <th>Chrono Mani (MM:SS) :</th>
+                        <th>Tirs manqués :</th>
+                        <th>Temps du tir (MM:SS) :</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
+
 // === 9. FONCTIONS DE BASE ===
 function validerSaisie(onglet) {
     const doss = parseInt(document.querySelector(`#${onglet} .input-dossard`).value);
