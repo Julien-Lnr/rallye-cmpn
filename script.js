@@ -1124,6 +1124,252 @@ function imprimerFeuilleControles() {
     printWindow.print();
 }
 
+function imprimerFicheControleAdministratif() {
+    const liste = [...concurrents]
+        .filter(c => Number.isFinite(c?.dossard))
+        .sort((a, b) => a.dossard - b.dossard);
+
+    if (!liste.length) {
+        alert('Aucun concurrent avec dossard à imprimer.');
+        return;
+    }
+
+    const title = 'Contrôle Administratif';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        alert('Impossible d ouvrir la fenêtre d impression.');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!doctype html>
+        <html lang="fr">
+        <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+                @page { size: A4 portrait; margin: 6mm; }
+                body { font-family: 'Times New Roman', serif; color: #111; margin: 0; }
+                .page {
+                    page-break-after: always;
+                    break-after: page;
+                    page-break-inside: avoid;
+                    break-inside: avoid;
+                }
+                .page:last-child {
+                    page-break-after: auto;
+                    break-after: auto;
+                }
+                .top-band {
+                    margin: 0 auto 3mm auto;
+                    width: 95%;
+                    border: 1.6px solid #000;
+                    text-align: center;
+                    font-weight: bold;
+                    font-size: 11px;
+                    padding: 2px 0;
+                    letter-spacing: 0.5px;
+                }
+                .sheet {
+                    border: 1.6px solid #000;
+                    padding: 7mm 5mm 4mm 5mm;
+                    box-sizing: border-box;
+                    min-height: calc(297mm - 28mm);
+                    display: flex;
+                    flex-direction: column;
+                    page-break-inside: avoid;
+                    break-inside: avoid;
+                }
+                h1 {
+                    margin: 0 0 3mm 0;
+                    text-align: center;
+                    font-size: 31px;
+                    letter-spacing: 0.6px;
+                }
+                .title-row {
+                    display: block;
+                    margin: 2mm 0 3mm 0;
+                    text-align: center;
+                }
+                .controleur-label {
+                    font-size: 14px;
+                    font-weight: bold;
+                    text-align: left;
+                    margin-top: 2mm;
+                }
+                .title-row h1 {
+                    margin: 0;
+                }
+                .controleur-write-line {
+                    display: inline-block;
+                    width: 270px;
+                    border-bottom: 1px solid #000;
+                    height: 14px;
+                    vertical-align: middle;
+                    margin-left: 6px;
+                }
+                .grid2 {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 6mm;
+                }
+                .section-title {
+                    margin: 0 0 1mm 0;
+                    font-size: 18px;
+                    font-weight: bold;
+                }
+                .line {
+                    margin: 0 0 1.6mm 0;
+                    font-size: 14px;
+                }
+                .empty-line {
+                    display: inline-block;
+                    min-width: 150px;
+                    border-bottom: 1px solid #000;
+                    height: 14px;
+                    vertical-align: middle;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 4mm;
+                    table-layout: fixed;
+                    border: 2.2px solid #000;
+                }
+                table, th, td { border: 2px solid #000; }
+                th, td {
+                    font-size: 13px;
+                    padding: 4px 5px;
+                    text-align: center;
+                    color: #000;
+                }
+                th { font-weight: bold; }
+                th:nth-child(3), td:nth-child(3) { border-right-width: 2.6px; }
+                th:nth-child(4), td:nth-child(4) { border-left-width: 2.6px; }
+                td.item {
+                    text-align: left;
+                    font-weight: bold;
+                }
+                td.mark {
+                    width: 17%;
+                    height: 27px;
+                }
+                .footer {
+                    margin-top: 6mm;
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 5mm;
+                }
+                .moto-wrap {
+                    margin-top: 5mm;
+                    text-align: center;
+                }
+                .moto-wrap img {
+                    width: 96%;
+                    height: auto;
+                    max-height: 170px;
+                }
+                .box {
+                    border: 1.6px solid #000;
+                    min-height: 64px;
+                    padding: 5px 7px;
+                    font-size: 15px;
+                }
+                .box-title {
+                    font-weight: bold;
+                    margin-bottom: 2px;
+                }
+                @media print {
+                    html, body { width: 100%; height: auto; }
+                    table, th, td { border: 2px solid #000 !important; border-color: #000 !important; }
+                    table { border: 2.2px solid #000 !important; }
+                    th:nth-child(3), td:nth-child(3) { border-right-width: 2.6px !important; }
+                    th:nth-child(4), td:nth-child(4) { border-left-width: 2.6px !important; }
+                    .sheet { page-break-inside: avoid; break-inside: avoid; }
+                }
+            </style>
+        </head>
+        <body>
+            ${liste.map(c => {
+                const nom = escapeHtml(c.nom || '');
+                const prenom = escapeHtml(c.prenom || '');
+                const dos = escapeHtml(c.dossard);
+                return `
+                <div class="page">
+                    <div class="top-band">ANNEXE 3 : LE CONTRÔLE ADMINISTRATIF</div>
+                    <div class="sheet">
+                        <div class="title-row">
+                            <h1>CONTROLE ADMINISTRATIF</h1>
+                            <div class="controleur-label">Nom du controleur : <span class="controleur-write-line"></span></div>
+                        </div>
+
+                        <div class="grid2">
+                            <div>
+                                <p class="section-title">PILOTE</p>
+                                <p class="line">Nom : <strong>${nom}</strong></p>
+                                <p class="line">Prénom : <strong>${prenom}</strong></p>
+                                <p class="line">Dossard : <strong>${dos}</strong></p>
+                                <p class="line">Affectation : <span class="empty-line"></span></p>
+                            </div>
+                            <div>
+                                <p class="section-title">PAPIERS <span style="font-size:15px;">(oui/non/absent)</span></p>
+                                <p class="line">Permis de conduire : <span class="empty-line"></span></p>
+                                <p class="line">Certificat d'immatriculation : <span class="empty-line"></span></p>
+                                <p class="line">Mémo assurance : <span class="empty-line"></span></p>
+                                <p class="line">Attestation de prêt : <span class="empty-line"></span></p>
+                                <p class="line">Contrôle technique : <span class="empty-line"></span></p>
+                            </div>
+                        </div>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ORGANE / EQUIPEMENT</th>
+                                    <th>OK</th>
+                                    <th>DEFAUTS</th>
+                                    <th>ORGANE / EQUIPEMENT</th>
+                                    <th>OK</th>
+                                    <th>DEFAUTS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td class="item">Freins</td><td class="mark"></td><td class="mark"></td><td class="item">Casque</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Eclairage</td><td class="mark"></td><td class="mark"></td><td class="item">Gants</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Rétro</td><td class="mark"></td><td class="mark"></td><td class="item">Blouson</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Echappement</td><td class="mark"></td><td class="mark"></td><td class="item">Air Bag</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Pneus</td><td class="mark"></td><td class="mark"></td><td class="item">Dorsale</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Plaque</td><td class="mark"></td><td class="mark"></td><td class="item">Pantalon</td><td class="mark"></td><td class="mark"></td></tr>
+                                <tr><td class="item">Clignotants</td><td class="mark"></td><td class="mark"></td><td class="item">Chaussures</td><td class="mark"></td><td class="mark"></td></tr>
+                            </tbody>
+                        </table>
+
+                        <div class="moto-wrap">
+                            <img src="motos_controle.png" alt="Illustration motos" onerror="this.style.display='none'">
+                        </div>
+
+                        <div class="footer">
+                            <div class="box">
+                                <div class="box-title">Légende</div>
+                                <div>O = choc</div>
+                                <div>---- = rayure</div>
+                                <div>X = cassé ou manquant</div>
+                            </div>
+                            <div class="box">
+                                <div class="box-title">ETAT au RETOUR :</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('')}
+        </body>
+        </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
+
 // === 9. FONCTIONS DE BASE ===
 function validerSaisie(onglet) {
     const doss = parseInt(document.querySelector(`#${onglet} .input-dossard`).value);
