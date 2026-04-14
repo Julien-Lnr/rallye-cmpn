@@ -950,21 +950,6 @@ function imprimerFeuilleManiabiliteTir() {
         return;
     }
 
-    const rows = liste.map(c => `
-        <tr>
-            <td>${Number.isFinite(c.dossard) ? c.dossard : '-'}</td>
-            <td>${escapeHtml(c.nom || '')}</td>
-            <td>${escapeHtml(c.prenom || '')}</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-            <td>&nbsp;</td>
-        </tr>
-    `).join('');
-
     const title = 'Feuille Maniabilité et Tir';
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -972,29 +957,14 @@ function imprimerFeuilleManiabiliteTir() {
         return;
     }
 
-    printWindow.document.write(`
-        <!doctype html>
-        <html lang="fr">
-        <head>
-            <meta charset="utf-8">
-            <title>${title}</title>
-            <style>
-                @page { size: A4 landscape; margin: 10mm; }
-                body { font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                h1 { margin: 0 0 4mm 0; font-size: 20px; }
-                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-                table, th, td { border: 1.4px solid #000; }
-                th, td { padding: 6px; font-size: 12px; box-sizing: border-box; overflow: hidden; }
-                th { background: #f1f1f1; text-align: center; vertical-align: middle; }
-                td { height: 28px; text-align: center; }
-                td:nth-child(2), td:nth-child(3) { text-align: left; }
-                @media print {
-                    table, th, td { border: 1.4px solid #000 !important; }
-                }
-            </style>
-        </head>
-        <body>
+    const pages = liste.map(c => `
+        <section class="page">
             <h1>${title}</h1>
+            <div class="pilot-id">
+                <span><strong>Dossard :</strong> ${Number.isFinite(c.dossard) ? c.dossard : '-'}</span>
+                <span><strong>Nom :</strong> ${escapeHtml(c.nom || '')}</span>
+                <span><strong>Prénom :</strong> ${escapeHtml(c.prenom || '')}</span>
+            </div>
             <table>
                 <colgroup>
                     <col style="width: 7%">
@@ -1023,9 +993,65 @@ function imprimerFeuilleManiabiliteTir() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${rows}
+                    <tr>
+                        <td>${Number.isFinite(c.dossard) ? c.dossard : '-'}</td>
+                        <td>${escapeHtml(c.nom || '')}</td>
+                        <td>${escapeHtml(c.prenom || '')}</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                    </tr>
                 </tbody>
             </table>
+        </section>
+    `).join('');
+
+    printWindow.document.write(`
+        <!doctype html>
+        <html lang="fr">
+        <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+                @page { size: A4 landscape; margin: 10mm; }
+                body { font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .page {
+                    page-break-after: always;
+                    break-after: page;
+                }
+                .page:last-child {
+                    page-break-after: auto;
+                    break-after: auto;
+                }
+                h1 { margin: 0 0 4mm 0; font-size: 20px; }
+                .pilot-id {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 8px;
+                    margin-bottom: 4mm;
+                    padding: 8px;
+                    border: 1.4px solid #000;
+                    background: #fafafa;
+                    font-size: 13px;
+                }
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                table, th, td { border: 1.4px solid #000; }
+                th, td { padding: 6px; font-size: 12px; box-sizing: border-box; overflow: hidden; }
+                th { background: #f1f1f1; text-align: center; vertical-align: middle; }
+                td { height: 48px; text-align: center; }
+                td:nth-child(2), td:nth-child(3) { text-align: left; }
+                @media print {
+                    table, th, td { border: 1.4px solid #000 !important; }
+                    .page { page-break-inside: avoid; break-inside: avoid; }
+                }
+            </style>
+        </head>
+        <body>
+            ${pages}
         </body>
         </html>
     `);
