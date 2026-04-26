@@ -17,20 +17,23 @@ let pendingImportRows = null;
 const defaultConfig = { 
     pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
     t_ideal: 30, region: 'paca', nb_bases: 2, o_dist_ideal: 100, o_tol_dist: 2, o_pen_dist: 100, pen_non_passage: 20000,
-    tenue: 500, briefing: 2000, v_l: 20, v_f: 50, mhe_points: 100000,
+    tenue: 500, briefing: 2000, v_l: 20, v_f: 50, mhe_points: 100000, nb_radars: 1, radar_limits: [50],
     jury_president: '', jury_secretaire: '', jury_nb: 0, jury_noms: [], base_distances: [],
     participant_categories: ['Police', 'Civil'], classement_categories: []
 };
 let config = Object.assign({}, defaultConfig, JSON.parse(localStorage.getItem('rallyeConfig_2025')) || {});
 if (!Array.isArray(config.jury_noms)) config.jury_noms = [];
 if (!Array.isArray(config.base_distances)) config.base_distances = [];
+if (!Array.isArray(config.radar_limits)) config.radar_limits = [];
 if (!Array.isArray(config.participant_categories)) config.participant_categories = [];
 if (!Array.isArray(config.classement_categories)) config.classement_categories = [];
 config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
+config.nb_radars = Math.max(0, parseInt(config.nb_radars || defaultConfig.nb_radars, 10) || defaultConfig.nb_radars);
 config.participant_categories = normalizeCategoryList(config.participant_categories);
 config.classement_categories = normalizeCategoryList(config.classement_categories);
 if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
 if (!config.classement_categories.length) config.classement_categories = [...config.participant_categories];
+if (!config.radar_limits.length) config.radar_limits = Array.from({ length: config.nb_radars }, () => 50);
 
 window.onload = () => { chargerConfigVisual(); updateUI(); renderClassementCategoryFilters(); refreshRuleLabels(); };
 
@@ -89,7 +92,7 @@ function isPointsEntryStarted() {
         const d = c.det;
         if ((d.c_tenue || 0) > 0 || d.c_briefing || d.c_admin_ko || d.c_moto_ko || d.r_v_mhe) return true;
         if ((d.m_cones || 0) > 0 || (d.m_pieds || 0) > 0 || (d.m_atels || 0) > 0 || (d.m_chute || 0) > 0 || (d.t_rates || 0) > 0) return true;
-        if ((d.r_cp || 0) > 0 || (d.r_v_l || 0) > 0 || (d.r_v_f || 0) > 0) return true;
+        if ((d.r_cp || 0) > 0 || (d.o_plaque || c.plaque || '') !== '' || (Array.isArray(d.radar_vitesses) && d.radar_vitesses.some(v => String(v || '').trim() !== ''))) return true;
         if ((d.o_km_dep || 0) > 0 || (d.o_km_arr || 0) > 0) return true;
         if ((d.m_chrono || '').trim() !== '' || (d.t_temps || '').trim() !== '' || (d.o_h_dep || '').trim() !== '' || (d.o_h_arr || '').trim() !== '') return true;
 
@@ -196,6 +199,182 @@ function getConfiguredCategories() {
 
 function getDefaultCategory() {
     return getConfiguredCategories()[0] || 'Civil';
+}
+
+function getRadarCount() {
+    return Math.max(0, parseInt(config.nb_radars || defaultConfig.nb_radars || 0, 10) || 0);
+}
+
+function getRadarLimit(index) {
+    const limit = Number(config.radar_limits?.[index - 1] ?? 0);
+    return Number.isFinite(limit) ? limit : 0;
+}
+
+function parseRadarSpeed(value) {
+    const text = String(value ?? '').trim().replace(',', '.');
+    if (!text) return NaN;
+    const match = text.match(/-?\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : Number(text);
+}
+
+function getRadarAdjustedSpeed(speed) {
+    if (!Number.isFinite(speed)) return NaN;
+    if (speed < 100) return Math.max(0, speed - 5);
+    if (speed > 100) return Math.ceil(speed * 0.95);
+    return 100;
+}
+
+function getRadarPenaltyDetails(speed, limit, rawValue = '') {
+    const rawText = String(rawValue ?? '').trim();
+    if (!rawText) {
+        return { originalSpeed: NaN, adjustedSpeed: NaN, excess: NaN, points: 0, mhe: false, empty: true };
+    }
+
+    const originalSpeed = Number.isFinite(speed) ? speed : NaN;
+    const adjustedSpeed = getRadarAdjustedSpeed(originalSpeed);
+    const excess = Number.isFinite(adjustedSpeed) ? adjustedSpeed - limit : NaN;
+
+    let points = 0;
+    let mhe = false;
+    if (Number.isFinite(excess) && excess > 0) {
+        if (excess <= 20) {
+            points = Math.ceil(excess * 20);
+        } else if (excess <= 39) {
+            points = Math.ceil(excess * 50);
+        } else {
+            mhe = true;
+            points = 100000;
+        }
+    }
+
+    return { originalSpeed, adjustedSpeed, excess, points, mhe, empty: false };
+}
+
+function renderRadarConfigInputs() {
+    const container = document.getElementById('container_radars_config');
+    if (!container) return;
+
+    const count = getRadarCount();
+    if (!count) {
+        container.innerHTML = '<div style="color:#666; font-style:italic;">Aucun contrôle radar configuré.</div>';
+        return;
+    }
+
+    container.innerHTML = Array.from({ length: count }, (_, idx) => {
+        const i = idx + 1;
+        const limit = getRadarLimit(i);
+        return `
+            <div style="margin-bottom: 10px; padding: 10px; border-bottom: 1px dashed #e7c57d;">
+                <label>Limitation radar ${i} (km/h) :</label>
+                <input type="number" id="radar_cfg_limit_${i}" min="0" step="1" value="${limit}" onchange="saveConfig()">
+            </div>`;
+    }).join('');
+}
+
+function renderRadarSaisieInputs(pilote = null) {
+    const container = document.getElementById('container_radars_saisie');
+    if (!container) return;
+
+    const count = getRadarCount();
+    if (!count) {
+        container.innerHTML = '<div style="color:#666; font-style:italic;">Configurez le nombre de contrôles radar pour saisir les vitesses.</div>';
+        return;
+    }
+
+    const vitesses = Array.isArray(pilote?.det?.radar_vitesses) ? pilote.det.radar_vitesses : [];
+    container.innerHTML = Array.from({ length: count }, (_, idx) => {
+        const i = idx + 1;
+        const limit = getRadarLimit(i);
+        const rawValue = vitesses[idx] ?? '';
+        const speed = parseRadarSpeed(rawValue);
+        const details = getRadarPenaltyDetails(speed, limit, rawValue);
+        const value = escapeHtml(vitesses[idx] ?? '');
+        const infoLine = details.empty
+            ? 'Vitesse déduite : - • Dépassement : - • Points : -'
+            : Number.isFinite(details.adjustedSpeed)
+            ? (details.mhe
+                ? `Vitesse déduite : ${details.adjustedSpeed} km/h • Dépassement : ${details.excess.toFixed(1)} km/h • Points : MHE`
+                : `Vitesse déduite : ${details.adjustedSpeed} km/h • Dépassement : ${details.excess.toFixed(1)} km/h • Points : ${details.points}`)
+            : 'Vitesse déduite : - • Dépassement : - • Points : -';
+        return `
+            <div style="margin-bottom: 10px; padding: 10px; border-bottom: 1px dashed #ffd6d6;">
+                <label>Vitesse au radar ${i} (limite ${limit} km/h) :</label>
+                <input type="text" id="r_radar_${i}" value="${value}" placeholder="km/h">
+                <div id="r_radar_info_${i}" style="margin-top:6px; font-size:0.92em; color:#8a1f1f; font-weight:bold;">${escapeHtml(infoLine)}</div>
+            </div>`;
+    }).join('');
+}
+
+function getOrientationCalculations() {
+    const hDep = parseHHMM(document.getElementById('o_h_dep')?.value || '');
+    const hArr = parseHHMM(document.getElementById('o_h_arr')?.value || '');
+    const duree = (hArr >= hDep) ? (hArr - hDep) : (1440 - hDep + hArr);
+
+    const dist = Math.max(0, (parseFloat(document.getElementById('o_km_arr')?.value) || 0) - (parseFloat(document.getElementById('o_km_dep')?.value) || 0));
+    const penD = Math.round(Math.max(0, Math.abs(dist - config.o_dist_ideal) - (config.o_dist_ideal * config.o_tol_dist / 100)) * config.o_pen_dist);
+
+    const cpCount = parseInt(document.getElementById('r_cp')?.value || '0', 10) || 0;
+    const cpPoints = cpCount * config.cp;
+
+    const radarCount = getRadarCount();
+    const radarDetails = [];
+    let radarPoints = 0;
+    let mheCount = 0;
+    for (let i = 1; i <= radarCount; i++) {
+        const raw = document.getElementById(`r_radar_${i}`)?.value || '';
+        const speed = parseRadarSpeed(raw);
+        const limit = getRadarLimit(i);
+        const details = getRadarPenaltyDetails(speed, limit, raw);
+        const excess = details.excess;
+        const points = details.points;
+        const mhe = details.mhe;
+
+        if (!details.empty) {
+            if (mhe) mheCount += 1;
+            radarPoints += points;
+        }
+        radarDetails.push({
+            index: i,
+            limit,
+            speed: Number.isFinite(speed) ? speed : null,
+            adjustedSpeed: Number.isFinite(details.adjustedSpeed) ? details.adjustedSpeed : null,
+            excess: Number.isFinite(excess) ? excess : null,
+            points,
+            mhe,
+            empty: details.empty,
+            raw
+        });
+    }
+
+    let totalReg = 0;
+    const bases = [];
+    for (let i = 1; i <= config.nb_bases; i++) {
+        const distBase = Number(config.base_distances?.[i - 1] ?? 0);
+        const idealSec = Math.round((Math.max(0, distBase) / 50) * 3600);
+        const depSec = parseHMS(document.getElementById(`reg${i}_dep`)?.value);
+        const arrSec = parseHMS(document.getElementById(`reg${i}_arr`)?.value);
+        const realSec = calculerDureeHms(depSec, arrSec);
+        const ecartSec = Math.abs(realSec - idealSec);
+        const baseF = parseInt(document.getElementById(`reg${i}_f`)?.value || '0', 10);
+        const basePoints = (ecartSec * config.regu) + (baseF * config.regu_f);
+        totalReg += basePoints;
+        bases.push({ index: i, idealSec, ecartSec, basePoints });
+    }
+
+    return {
+        hDep,
+        hArr,
+        duree,
+        dist,
+        penD,
+        cpPoints,
+        radarPoints,
+        radarDetails,
+        mheCount,
+        totalReg,
+        routePoints: cpPoints + radarPoints + penD,
+        bases
+    };
 }
 
 function normalizeSpec(value) {
@@ -456,7 +635,10 @@ function importerDepuisSauvegardeWorkbook(workbook) {
             normalizeSpec(c.spec)
         );
         pilote.dossard = Number.isFinite(c.dossard) ? c.dossard : null;
+        pilote.plaque = String(c.plaque || c.det?.o_plaque || '').trim();
         pilote.det = (c.det && typeof c.det === 'object') ? c.det : {};
+        if (!Array.isArray(pilote.det.radar_vitesses)) pilote.det.radar_vitesses = [];
+        if (!pilote.det.o_plaque && pilote.plaque) pilote.det.o_plaque = pilote.plaque;
         pilote.points = Number(c.points || 0);
         pilote.pointsAdmin = Number(c.pointsAdmin || 0);
         pilote.pointsMani = Number(c.pointsMani || 0);
@@ -655,9 +837,7 @@ function chargerPilote(onglet) {
             document.getElementById('o_km_arr').value = p.det.o_km_arr || 0;
             document.getElementById('o_h_dep').value = p.det.o_h_dep || "";
             document.getElementById('o_h_arr').value = p.det.o_h_arr || "";
-            document.getElementById('r_v_l').value = p.det.r_v_l || 0;
-            document.getElementById('r_v_f').value = p.det.r_v_f || 0;
-            document.getElementById('r_v_mhe').checked = p.det.r_v_mhe || false;
+            renderRadarSaisieInputs(p);
             genererChampsBases(p);
         }
         calculDirect(onglet);
@@ -696,37 +876,30 @@ function calculDirect(onglet) {
     }
 
     if (onglet === 'Orientation') {
-        const hDep = parseHHMM(document.getElementById('o_h_dep').value);
-        const hArr = parseHHMM(document.getElementById('o_h_arr').value);
-        let duree = (hArr >= hDep) ? (hArr - hDep) : (1440 - hDep + hArr);
-        document.getElementById('calc_temps').innerText = `Durée : ${formatHHMM(duree)}`;
-        
-        const dist = Math.max(0, (parseFloat(document.getElementById('o_km_arr').value)||0) - (parseFloat(document.getElementById('o_km_dep').value)||0));
-        const penD = Math.round(Math.max(0, Math.abs(dist - config.o_dist_ideal) - (config.o_dist_ideal * config.o_tol_dist / 100)) * config.o_pen_dist);
-        document.getElementById('calc_dist').innerText = `Distance : ${dist.toFixed(1)} km`;
+        const details = getOrientationCalculations();
+        document.getElementById('calc_temps').innerText = `Durée : ${formatHHMM(details.duree)}`;
+        document.getElementById('calc_dist').innerText = `Distance : ${details.dist.toFixed(1)} km`;
 
-        const v_l = Math.min(20, parseInt(document.getElementById('r_v_l').value)||0);
-        const v_f = parseInt(document.getElementById('r_v_f').value)||0;
-        let r_pts = (parseInt(document.getElementById('r_cp').value)||0)*config.cp + (v_l * config.v_l) + (v_f * config.v_f) + penD;
-        document.getElementById('titre_routier').innerText = `Routier & Vitesse : ${r_pts} pt(s)`;
+        const titleRadar = details.mheCount > 0 ? ` 🚩 (${details.mheCount} MHE)` : '';
+        document.getElementById('titre_routier').innerText = `Routier & Vitesse : ${Math.round(details.routePoints)} pt(s)${titleRadar}`;
 
-        let totalReg = 0;
-        for(let i=1; i<=config.nb_bases; i++){
-            const distBase = Number(config.base_distances?.[i - 1] ?? 0);
-            const idealSec = Math.round((Math.max(0, distBase) / 50) * 3600);
-            const depSec = parseHMS(document.getElementById(`reg${i}_dep`)?.value);
-            const arrSec = parseHMS(document.getElementById(`reg${i}_arr`)?.value);
-            const realSec = calculerDureeHms(depSec, arrSec);
-            const ecartSec = Math.abs(realSec - idealSec);
-            totalReg += ecartSec * config.regu;
+        details.radarDetails.forEach(detail => {
+            const infoEl = document.getElementById(`r_radar_info_${detail.index}`);
+            if (!infoEl) return;
+            if (detail.empty || detail.speed === null) {
+                infoEl.innerText = 'Vitesse déduite : - • Dépassement : - • Points : -';
+                return;
+            }
+            infoEl.innerText = detail.mhe
+                ? `Vitesse déduite : ${detail.adjustedSpeed} km/h • Dépassement : ${detail.excess.toFixed(1)} km/h • Points : MHE`
+                : `Vitesse déduite : ${detail.adjustedSpeed} km/h • Dépassement : ${detail.excess.toFixed(1)} km/h • Points : ${detail.points}`;
+        });
 
-            const calcEl = document.getElementById(`reg${i}_calc`);
-            if (calcEl) calcEl.innerText = `Temps idéal (50 km/h) : ${formatHMS(idealSec)} — Écart : ${formatHMS(ecartSec)}`;
-
-            const baseF = parseInt(document.getElementById(`reg${i}_f`)?.value || '0', 10);
-            totalReg += (baseF * config.regu_f);
-        }
-        document.getElementById('titre_regu').innerText = `Bases Chrono : ${Math.round(totalReg)} pt(s)`;
+        details.bases.forEach(base => {
+            const calcEl = document.getElementById(`reg${base.index}_calc`);
+            if (calcEl) calcEl.innerText = `Temps idéal (50 km/h) : ${formatHMS(base.idealSec)} — Écart : ${formatHMS(base.ecartSec)}`;
+        });
+        document.getElementById('titre_regu').innerText = `Bases Chrono : ${Math.round(details.totalReg)} pt(s)`;
     }
 }
 
@@ -921,6 +1094,117 @@ function imprimerFeuilleBaseChrono() {
                         <th>Prénom</th>
                         ${baseHeaders}
                         <th>Pieds à terre</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+}
+
+function imprimerFeuilleControleVitesse() {
+    const liste = [...concurrents].sort((a, b) => {
+        const dA = Number.isFinite(a.dossard) ? a.dossard : Number.MAX_SAFE_INTEGER;
+        const dB = Number.isFinite(b.dossard) ? b.dossard : Number.MAX_SAFE_INTEGER;
+        if (dA !== dB) return dA - dB;
+        const nomA = (a.nom || '').toString();
+        const nomB = (b.nom || '').toString();
+        return nomA.localeCompare(nomB, 'fr', { sensitivity: 'base' });
+    });
+
+    if (!liste.length) {
+        alert('Aucun concurrent à imprimer.');
+        return;
+    }
+
+    const radarCount = getRadarCount();
+    const radarLegends = Array.from({ length: radarCount }, (_, i) => `Radar ${i + 1} : ${getRadarLimit(i + 1)} km/h`).join(' • ');
+
+    const radarHeader = `<th>Vitesse radar<br><span style="font-size:10px; font-weight:normal;">Radar numéro : ................................</span></th>`;
+
+    const rows = liste.map(c => {
+        const plaque = c.plaque || c.det?.o_plaque || '';
+        const vitesses = Array.isArray(c.det?.radar_vitesses) ? c.det.radar_vitesses : [];
+        const vitesseTexte = vitesses.filter(v => String(v || '').trim() !== '').join(' / ');
+        return `
+        <tr>
+            <td>${Number.isFinite(c.dossard) ? c.dossard : '-'}</td>
+            <td>${escapeHtml(c.nom || '')}</td>
+            <td>${escapeHtml(c.prenom || '')}</td>
+            <td>${escapeHtml(plaque)}</td>
+            <td style="text-align:center;">${vitesseTexte ? escapeHtml(`${vitesseTexte} km/h`) : '&nbsp;'}</td>
+        </tr>
+    `;
+    }).join('');
+
+    const title = 'Feuille Contrôle Radar';
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        alert('Impossible d ouvrir la fenêtre d impression.');
+        return;
+    }
+
+    printWindow.document.write(`
+        <!doctype html>
+        <html lang="fr">
+        <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+                @page { size: A4 portrait; margin: 12mm; }
+                body { font-family: Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                h1 { margin: 0 0 4mm 0; font-size: 20px; }
+                .meta {
+                    margin: 0 0 5mm 0;
+                    padding: 12px;
+                    border: 1.4px solid #000;
+                    background: #fafafa;
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    gap: 8px;
+                    font-size: 13px;
+                }
+                .meta-line { line-height: 1.6; }
+                .meta-line strong { display: inline-block; min-width: 145px; }
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                table, th, td { border: 1.4px solid #000; }
+                th, td { padding: 8px; font-size: 12px; box-sizing: border-box; overflow: hidden; }
+                th { background: #f1f1f1; text-align: center; vertical-align: middle; }
+                td { height: 32px; text-align: center; vertical-align: top; }
+                td:nth-child(2), td:nth-child(3), td:nth-child(4) { text-align: left; }
+                @media print {
+                    table, th, td { border: 1.4px solid #000 !important; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${title}</h1>
+            <div class="meta">
+                <div class="meta-line"><strong>Contrôles radar :</strong> ${radarCount || '0'}</div>
+                <div class="meta-line"><strong>Limites :</strong> ${escapeHtml(radarLegends || 'Aucun radar configuré')}</div>
+                <div class="meta-line"><strong>Radar numéro :</strong> ................................................................................</div>
+            </div>
+            <table>
+                <colgroup>
+                    <col style="width: 10%">
+                    <col style="width: 18%">
+                    <col style="width: 18%">
+                    <col style="width: 22%">
+                    <col style="width: 32%">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Dossard</th>
+                        <th>Nom</th>
+                        <th>Prénom</th>
+                        <th>Plaque d immatriculation</th>
+                        ${radarHeader}
                     </tr>
                 </thead>
                 <tbody>
@@ -1440,17 +1724,17 @@ function validerSaisie(onglet) {
         p.det.o_km_arr = parseFloat(document.getElementById('o_km_arr').value || '0');
         p.det.o_h_dep = document.getElementById('o_h_dep').value || "";
         p.det.o_h_arr = document.getElementById('o_h_arr').value || "";
-        p.det.r_v_l = parseInt(document.getElementById('r_v_l').value || '0', 10);
-        p.det.r_v_f = parseInt(document.getElementById('r_v_f').value || '0', 10);
-        p.det.r_v_mhe = document.getElementById('r_v_mhe').checked;
+        const radarCount = getRadarCount();
+        p.det.radar_vitesses = Array.from({ length: radarCount }, (_, idx) => (document.getElementById(`r_radar_${idx + 1}`)?.value || '').trim());
 
         for(let i=1; i<=config.nb_bases; i++) {
             p.det[`reg${i}_dep`] = document.getElementById(`reg${i}_dep`).value;
             p.det[`reg${i}_arr`] = document.getElementById(`reg${i}_arr`).value;
             p.det[`reg${i}_f`] = parseInt(document.getElementById(`reg${i}_f`).value || '0', 10);
         }
-        p.pointsRoute = parseInt(document.getElementById('titre_routier').innerText.match(/\d+/)[0]);
-        p.pointsRegu = parseInt(document.getElementById('titre_regu').innerText.match(/\d+/)[0]);
+        const orientation = getOrientationCalculations();
+        p.pointsRoute = Math.round(orientation.routePoints);
+        p.pointsRegu = Math.round(orientation.totalReg);
         p.pointsRegul = p.pointsRegu;
     }
     recalculerPointsConcurrent(p);
@@ -1463,6 +1747,12 @@ function getMheCount(concurrent) {
     if (concurrent.det?.c_admin_ko) count += 1;
     if (concurrent.det?.c_moto_ko) count += 1;
     if (concurrent.det?.r_v_mhe) count += 1;
+    const radarCount = Math.max(getRadarCount(), Array.isArray(concurrent.det?.radar_vitesses) ? concurrent.det.radar_vitesses.length : 0);
+    for (let i = 1; i <= radarCount; i++) {
+        const speed = parseRadarSpeed(concurrent.det?.radar_vitesses?.[i - 1]);
+        const limit = getRadarLimit(i);
+        if (Number.isFinite(speed) && (speed - limit) > 39) count += 1;
+    }
     if (concurrent.manualMhe) count += 1;
     return count;
 }
@@ -1475,7 +1765,7 @@ function recalculerPointsConcurrent(concurrent) {
     concurrent.points = basePoints + (mheCount * config.mhe_points);
 }
 
-function creerPilote(n,p,s) { return { nom:n, prenom:p, spec:s, dossard:null, points:0, det:{} }; }
+function creerPilote(n,p,s) { return { nom:n, prenom:p, spec:s, dossard:null, points:0, plaque:'', det:{ radar_vitesses: [] } }; }
 function saveConfig() {
     config.pied = parseInt(document.getElementById('p_pied')?.value || config.pied, 10);
     config.cone = parseInt(document.getElementById('p_cone')?.value || config.cone, 10);
@@ -1497,6 +1787,7 @@ function saveConfig() {
     config.t_ideal = parseChrono(document.getElementById('t_ideal')?.value || secondsToChrono(config.t_ideal));
     config.o_dist_ideal = parseFloat(document.getElementById('o_dist_ideal')?.value || config.o_dist_ideal);
     config.nb_bases = parseInt(document.getElementById('p_nb_bases')?.value || config.nb_bases, 10);
+    config.nb_radars = Math.max(0, parseInt(document.getElementById('p_nb_radars')?.value || config.nb_radars, 10) || 0);
     config.participant_categories = normalizeCategoryList(document.getElementById('categories_spec')?.value || config.participant_categories);
     if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
     config.classement_categories = normalizeCategoryList(config.classement_categories).filter(category =>
@@ -1510,10 +1801,22 @@ function saveConfig() {
         const parsed = parseFloat(inputValue ?? `${fallback}`);
         return Number.isFinite(parsed) ? parsed : 0;
     });
+    config.radar_limits = Array.from({ length: config.nb_radars }, (_, idx) => {
+        const i = idx + 1;
+        const inputValue = document.getElementById(`radar_cfg_limit_${i}`)?.value;
+        const fallback = Number(config.radar_limits?.[idx] ?? 50);
+        const parsed = parseInt(inputValue ?? `${fallback}`, 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+    });
     save();
     genererChampsBases();
+    renderRadarConfigInputs();
     refreshCategorySelectors();
     renderClassementCategoryFilters();
+    if (document.getElementById('formOrientation')?.style.display === 'block') {
+        const doss = parseInt(document.querySelector('#Orientation .input-dossard')?.value || '0', 10);
+        if (Number.isFinite(doss) && doss > 0) chargerPilote('Orientation');
+    }
     updateUI();
     refreshRuleLabels();
 }
@@ -1546,6 +1849,7 @@ function chargerConfigVisual() {
     setValue('t_ideal', secondsToChrono(config.t_ideal));
     setValue('o_dist_ideal', config.o_dist_ideal);
     setValue('p_nb_bases', config.nb_bases);
+    setValue('p_nb_radars', config.nb_radars);
     setValue('categories_spec', getConfiguredCategories().join('\n'));
     setValue('choix_region', config.region);
     setValue('jury_president', config.jury_president || '');
@@ -1555,6 +1859,7 @@ function chargerConfigVisual() {
     const img = document.getElementById('logo_region');
     if (img) img.src = `logo_${config.region}.png`;
     genererChampsBases();
+    renderRadarConfigInputs();
     renderJuryInputs();
     renderClassementCategoryFilters();
     refreshJuryPdf();

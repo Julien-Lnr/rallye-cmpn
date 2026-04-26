@@ -223,6 +223,13 @@
                 <div id="container_bases_config" style="margin-top:10px;"></div>
             </div>
 
+            <div style="background: #fff6e8; padding: 15px; border-radius: 8px; border: 1px solid #f0c36d; margin-bottom: 20px;">
+                <h3 style="margin-top:0; color: #8a5b00;">📡 Configuration Radar</h3>
+                <label>Nombre de contrôles radar :</label>
+                <input type="number" id="p_nb_radars" min="0" max="20" value="1" onchange="saveConfig();">
+                <div id="container_radars_config" style="margin-top:10px;"></div>
+            </div>
+
             <label>N° Dossard :</label>
             <input type="number" min="0" class="input-dossard" oninput="chargerPilote('Orientation')">
             <div id="verifOrientation"></div>
@@ -230,7 +237,7 @@
                 
     <div class="grid" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px dashed #ccc; margin-bottom: 25px;">
         <div>
-            <h3 style="margin-top:0; border-bottom: 1px solid #ddd; padding-bottom:5px;">⏱️ Routier (Départage)</h3>
+            <h3 style="margin-top:0; border-bottom: 1px solid #ddd; padding-bottom:5px;">⏱️ Routier</h3>
             <label>Départ (HH:MM) :</label><input type="text" id="o_h_dep" class="time-mask" maxlength="5" placeholder="08:00">
             <label>Arrivée (HH:MM) :</label><input type="text" id="o_h_arr" class="time-mask" maxlength="5" placeholder="10:30">
             <div id="calc_temps" style="margin-top: 10px; font-weight:bold; color: var(--police-blue);">Durée : 00:00</div>
@@ -247,34 +254,7 @@
         <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #ffcccc;">
             <h3 id="titre_routier" style="margin-top:0; color: var(--police-red);">Routier & Vitesse : 0 pt</h3>
             <label>CP manqués :</label><input type="number" id="r_cp" min="0" value="0">
-            <label>Excès &lt; 20km/h (<span id="lbl_p_v_l">20</span> pts/km) :</label>
-            <input type="number" id="r_v_l" min="0" max="20" placeholder="Max 20">
-            <label>Excès 21-39km/h (<span id="lbl_p_v_f">50</span> pts/km) :</label>
-            <select id="r_v_f">
-                <option value="0">0</option>
-                <option value="21">21</option>
-                <option value="22">22</option>
-                <option value="23">23</option>
-                <option value="24">24</option>
-                <option value="25">25</option>
-                <option value="26">26</option>
-                <option value="27">27</option>
-                <option value="28">28</option>
-                <option value="29">29</option>
-                <option value="30">30</option>
-                <option value="31">31</option>
-                <option value="32">32</option>
-                <option value="33">33</option>
-                <option value="34">34</option>
-                <option value="35">35</option>
-                <option value="36">36</option>
-                <option value="37">37</option>
-                <option value="38">38</option>
-                <option value="39">39</option>
-            </select>
-            <label style="color: red; font-weight: bold; margin-top:10px; display: block;">
-                <input type="checkbox" id="r_v_mhe" onchange="calculDirect('Orientation')"> 🚩 Excès > 40km/h (MHE)
-            </label>
+            <div id="container_radars_saisie" style="margin-top:10px;"></div>
         </div>
 
 <div style="background: #f0f7ff; padding: 15px; border-radius: 8px; border: 1px solid #cce5ff;">
@@ -292,6 +272,7 @@
 
 <div style="margin-top:20px; display:flex; justify-content:flex-end;">
     <button class="btn-blue" onclick="imprimerFeuilleBaseChrono()">🖨️ Imprimer feuille base chrono</button>
+    <button class="btn-blue" style="margin-left:10px;" onclick="imprimerFeuilleControleVitesse()">🖨️ Imprimer feuille contrôle de vitesse</button>
 </div>
         </div>
     </div>
