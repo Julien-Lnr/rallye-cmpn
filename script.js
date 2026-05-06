@@ -13,12 +13,43 @@ let currentClassementType = 'General';
 let editingRowIndex = -1;
 let pendingImportHeaders = null;
 let pendingImportRows = null;
+let sponsorIntroTimeoutId = null;
+let sponsorCycleIntervalId = null;
+let sponsorShrinkTimeoutId = null;
+let sponsorCurrentIndex = 0;
+let sponsorSeenKeys = new Set();
+let sponsorResizeBound = false;
+let sponsorCycleToken = 0;
+const sponsorLogoCache = new Map();
+const SPONSOR_CARD_HOLD_MS = 2000;
+const SPONSOR_CARD_MOVE_MS = 650;
+const SPONSOR_HOLD_AFTER_FULL_MS = 5000;
+const SPONSOR_RESET_ANIM_MS = 1200;
+const SPONSOR_LOGO_INTRO_MS = 900;
+const INTRO_LOGO_HOLD_MS = 2000;  // Pause au centre
+const INTRO_LOGO_MOVE_MS = 1800;  // Animation vers position final
+const INTRO_CMPN_DURATION_MS = INTRO_LOGO_HOLD_MS + INTRO_LOGO_MOVE_MS;  // 3.8s total
+const INTRO_THOR_DURATION_MS = INTRO_LOGO_HOLD_MS + INTRO_LOGO_MOVE_MS;  // 3.8s total
+const INTRO_TOTAL_DURATION_MS = INTRO_CMPN_DURATION_MS + INTRO_THOR_DURATION_MS;
+const THOR_LOGO_URL = 'logo le thor.png';
+
+const defaultSponsorsList = [
+    { name: 'CMPN PACA', logo: 'logo_paca.png' },
+    { name: 'Google', logo: 'https://logo.clearbit.com/google.com' },
+    { name: 'Michelin', logo: 'https://logo.clearbit.com/michelin.com' },
+    { name: 'TotalEnergies', logo: 'https://logo.clearbit.com/totalenergies.com' },
+    { name: 'Yamaha', logo: 'https://logo.clearbit.com/yamaha-motor.eu' },
+    { name: 'BMW Motorrad', logo: 'https://logo.clearbit.com/bmw.com' },
+    { name: 'Honda', logo: 'https://logo.clearbit.com/honda.com' },
+    { name: 'Kawasaki', logo: 'https://logo.clearbit.com/kawasaki.eu' }
+];
 
 const defaultConfig = { 
     pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
     t_ideal: 30, region: 'paca', nb_bases: 2, o_dist_ideal: 100, o_tol_dist: 2, o_pen_dist: 100, pen_non_passage: 20000,
     tenue: 500, briefing: 2000, v_l: 20, v_f: 50, mhe_points: 100000, nb_radars: 1, radar_limits: [50],
     jury_president: '', jury_secretaire: '', jury_nb: 0, jury_noms: [], base_distances: [],
+    sponsors: [...defaultSponsorsList], sponsor_speed: 'normal',
     participant_categories: ['Police', 'Civil'], classement_categories: []
 };
 let config = Object.assign({}, defaultConfig, JSON.parse(localStorage.getItem('rallyeConfig_2025')) || {});
@@ -27,21 +58,32 @@ if (!Array.isArray(config.base_distances)) config.base_distances = [];
 if (!Array.isArray(config.radar_limits)) config.radar_limits = [];
 if (!Array.isArray(config.participant_categories)) config.participant_categories = [];
 if (!Array.isArray(config.classement_categories)) config.classement_categories = [];
+if (!Array.isArray(config.sponsors)) config.sponsors = [];
 config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
 config.nb_radars = Math.max(0, parseInt(config.nb_radars || defaultConfig.nb_radars, 10) || defaultConfig.nb_radars);
 config.participant_categories = normalizeCategoryList(config.participant_categories);
 config.classement_categories = normalizeCategoryList(config.classement_categories);
+config.sponsors = normalizeSponsorList(config.sponsors);
+if (!config.sponsors.length) config.sponsors = [...defaultSponsorsList];
+if (!['slow', 'normal', 'fast'].includes(config.sponsor_speed)) config.sponsor_speed = 'normal';
 if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
 if (!config.classement_categories.length) config.classement_categories = [...config.participant_categories];
 if (!config.radar_limits.length) config.radar_limits = Array.from({ length: config.nb_radars }, () => 50);
 
-window.onload = () => { chargerConfigVisual(); updateUI(); renderClassementCategoryFilters(); refreshRuleLabels(); };
+window.onload = () => { chargerConfigVisual(); updateUI(); renderClassementCategoryFilters(); refreshRuleLabels(); initSponsorVideoTab(); };
 
 // === 3. AUTO-FORMATTAGE CHRONOS ===
 document.addEventListener('input', function(e) {
     if (e.target.classList && e.target.classList.contains('time-mask-hms')) {
         let val = e.target.value.replace(/\D/g, '');
         if (val.length > 6) val = val.substring(0, 6);
+        if (val.length > 4) e.target.value = val.substring(0, 2) + ':' + val.substring(2, 4) + ':' + val.substring(4);
+        else if (val.length > 2) e.target.value = val.substring(0, 2) + ':' + val.substring(2);
+        else e.target.value = val;
+    }
+    if (e.target.classList && e.target.classList.contains('time-mask-ms')) {
+        let val = e.target.value.replace(/\D/g, '');
+        if (val.length > 7) val = val.substring(0, 7);
         if (val.length > 4) e.target.value = val.substring(0, 2) + ':' + val.substring(2, 4) + ':' + val.substring(4);
         else if (val.length > 2) e.target.value = val.substring(0, 2) + ':' + val.substring(2);
         else e.target.value = val;
@@ -62,6 +104,8 @@ function openTab(name) {
     if(target) target.style.display = 'block';
     const mainTabBtn = document.querySelector(`.nav-tabs > .tab-link[onclick*="openTab('${name}')"]`);
     if (mainTabBtn) mainTabBtn.classList.add('active');
+    if (name === 'VideoSponsors') startSponsorAnimation();
+    else stopSponsorAnimation();
     if(name === 'Classement') filtrerClassement(currentClassementType);
 }
 
@@ -191,6 +235,49 @@ function normalizeCategoryList(value) {
         }
     });
     return categories;
+}
+
+function normalizeSponsorList(value) {
+    const raw = Array.isArray(value) ? value : String(value ?? '').split(/\n+/);
+    const sponsors = [];
+
+    raw.forEach(entry => {
+        let name = '';
+        let logo = '';
+
+        if (entry && typeof entry === 'object') {
+            name = String(entry.name ?? '').trim().replace(/\s+/g, ' ');
+            logo = String(entry.logo ?? '').trim();
+        } else {
+            const line = String(entry ?? '').trim();
+            if (!line) return;
+            const parts = line.split('|');
+            name = String(parts.shift() ?? '').trim().replace(/\s+/g, ' ');
+            logo = String(parts.join('|') ?? '').trim();
+        }
+
+        if (!name) return;
+        if (logo && !/^(https?:\/\/|logo_.*\.png$|.*\.png$|.*\.jpg$|.*\.jpeg$|.*\.webp$|.*\.svg$)/i.test(logo)) {
+            logo = '';
+        }
+
+        const exists = sponsors.some(existing => existing.name.toLowerCase() === name.toLowerCase());
+        if (!exists) sponsors.push({ name, logo });
+    });
+
+    return sponsors;
+}
+
+function getSponsorList() {
+    return normalizeSponsorList(config.sponsors);
+}
+
+function sponsorToLine(sponsor) {
+    if (!sponsor || typeof sponsor !== 'object') return '';
+    const name = String(sponsor.name || '').trim();
+    const logo = String(sponsor.logo || '').trim();
+    if (!name) return '';
+    return logo ? `${name} | ${logo}` : name;
 }
 
 function getConfiguredCategories() {
@@ -659,10 +746,14 @@ function importerDepuisSauvegardeWorkbook(workbook) {
     if (!Array.isArray(config.base_distances)) config.base_distances = [];
     if (!Array.isArray(config.participant_categories)) config.participant_categories = [];
     if (!Array.isArray(config.classement_categories)) config.classement_categories = [];
+    if (!Array.isArray(config.sponsors)) config.sponsors = [];
     config.jury_nb = Math.max(0, parseInt(config.jury_nb || 0, 10) || 0);
     config.nb_bases = Math.max(1, parseInt(config.nb_bases || defaultConfig.nb_bases, 10) || defaultConfig.nb_bases);
     config.participant_categories = normalizeCategoryList(config.participant_categories);
     config.classement_categories = normalizeCategoryList(config.classement_categories);
+    config.sponsors = normalizeSponsorList(config.sponsors);
+    if (!config.sponsors.length) config.sponsors = [...defaultSponsorsList];
+    if (!['slow', 'normal', 'fast'].includes(config.sponsor_speed)) config.sponsor_speed = 'normal';
     if (!config.participant_categories.length) config.participant_categories = [...defaultConfig.participant_categories];
     config.classement_categories = config.classement_categories.filter(category =>
         config.participant_categories.some(available => available.toLowerCase() === category.toLowerCase())
@@ -971,10 +1062,10 @@ function filtrerClassement(type) {
         }).join('');
     } else if (type === 'Tir') {
         // Classement Tir: Tirs manqués, Temps concurrent
-        headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Tirs manqués</th><th>Temps (MM:SS)</th><th>Points</th>";
+        headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Tirs manqués</th><th>Temps (MM:SS:mmm)</th><th>Points</th>";
         bodyHTML = liste.map((c, i) => {
             const tirsManques = c.det?.t_rates || 0;
-            const temps = formatChrono(parseChrono(c.det?.t_temps || ""));
+            const temps = formatChronoMs(parseChrono(c.det?.t_temps || ""));
             return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${tirsManques}</td><td>${temps}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
         }).join('');
     }
@@ -1273,7 +1364,7 @@ function imprimerFeuilleManiabiliteTir() {
                         <th>Chutes :</th>
                         <th>Chrono Mani (MM:SS) :</th>
                         <th>Tirs manqués :</th>
-                        <th>Temps du tir (MM:SS) :</th>
+                        <th>Temps du tir (MM:SS:mmm) :</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1851,6 +1942,8 @@ function chargerConfigVisual() {
     setValue('p_nb_bases', config.nb_bases);
     setValue('p_nb_radars', config.nb_radars);
     setValue('categories_spec', getConfiguredCategories().join('\n'));
+    setValue('sponsors_list', getSponsorList().map(sponsorToLine).join('\n'));
+    setValue('sponsor_speed', config.sponsor_speed || 'normal');
     setValue('choix_region', config.region);
     setValue('jury_president', config.jury_president || '');
     setValue('jury_secretaire', config.jury_secretaire || '');
@@ -1864,6 +1957,1011 @@ function chargerConfigVisual() {
     renderClassementCategoryFilters();
     refreshJuryPdf();
     refreshRuleLabels();
+    setSponsorSpeed(config.sponsor_speed || 'normal');
+}
+
+function getSponsorCycleDurationMs() {
+    const speed = config.sponsor_speed || 'normal';
+    if (speed === 'slow') return 2600;
+    if (speed === 'fast') return 1400;
+    return 1900;
+}
+
+function getSponsorRevealStepDurationMs() {
+    const speed = config.sponsor_speed || 'normal';
+    if (speed === 'slow') return 3200;
+    if (speed === 'fast') return 2100;
+    return SPONSOR_CARD_HOLD_MS + SPONSOR_CARD_MOVE_MS;
+}
+
+function getSponsorLogoUrl(sponsor) {
+    const logo = String(sponsor?.logo || '').trim();
+    return logo;
+}
+
+function getSponsorAssetUrls(sponsors) {
+    const urls = [
+        'logo_cmpn.png',
+        'logo_paca.png',
+        THOR_LOGO_URL,
+        ...sponsors.map(s => getSponsorLogoUrl(s)).filter(Boolean)
+    ];
+    return Array.from(new Set(urls));
+}
+
+function setVideoExportProgress(progressPct, label, visible = true) {
+    const wrapper = document.getElementById('sponsor_video_progress');
+    const bar = document.getElementById('sponsor_video_progress_bar');
+    const value = document.getElementById('sponsor_video_progress_value');
+    const text = document.getElementById('sponsor_video_progress_label');
+    if (!wrapper || !bar || !value || !text) return;
+
+    if (!visible) {
+        wrapper.style.display = 'none';
+        return;
+    }
+
+    const pct = Math.max(0, Math.min(100, Math.round(progressPct || 0)));
+    wrapper.style.display = 'block';
+    bar.style.width = `${pct}%`;
+    value.textContent = `${pct}%`;
+    if (label) text.textContent = label;
+}
+
+async function preloadSponsorAssets(urls, onProgress) {
+    if (!Array.isArray(urls) || !urls.length) return new Map();
+
+    let done = 0;
+    const total = urls.length;
+    const progress = () => {
+        if (onProgress) onProgress(done, total);
+    };
+
+    const promises = urls.map(async (url) => {
+        if (!url) {
+            done += 1;
+            progress();
+            return [url, null];
+        }
+
+        if (sponsorLogoCache.has(url)) {
+            done += 1;
+            progress();
+            return [url, sponsorLogoCache.get(url)];
+        }
+
+        const img = await loadImageForCanvas(url);
+        if (img) sponsorLogoCache.set(url, img);
+        done += 1;
+        progress();
+        return [url, img];
+    });
+
+    const entries = await Promise.all(promises);
+    return new Map(entries.filter(([, img]) => !!img));
+}
+
+function clearSponsorTimers() {
+    if (sponsorIntroTimeoutId) {
+        clearTimeout(sponsorIntroTimeoutId);
+        sponsorIntroTimeoutId = null;
+    }
+    if (sponsorShrinkTimeoutId) {
+        clearTimeout(sponsorShrinkTimeoutId);
+        sponsorShrinkTimeoutId = null;
+    }
+    if (sponsorCycleIntervalId) {
+        clearInterval(sponsorCycleIntervalId);
+        sponsorCycleIntervalId = null;
+    }
+}
+
+function getSponsorMidpoint(total) {
+    return Math.ceil(total / 2);
+}
+
+function getSponsorSideByIndex(index, total) {
+    return index < getSponsorMidpoint(total) ? 'left' : 'right';
+}
+
+function getSponsorKey(sponsor) {
+    return String(sponsor?.name || '').trim().toLowerCase();
+}
+
+function renderSponsorShowcaseEmpty() {
+    const container = document.getElementById('sponsor_grid_container');
+    if (!container) return;
+    container.innerHTML = '';
+    container.classList.remove('is-resetting');
+}
+
+function configureSponsorGridLayout(total) {
+    const stage = document.getElementById('sponsor_stage');
+    const container = document.getElementById('sponsor_grid_container');
+    if (!container || !stage) return;
+
+    const count = Math.max(0, total || 0);
+    const stageWidth = stage.clientWidth || window.innerWidth || 1200;
+    const maxColumnsPerRow = stageWidth >= 1200 ? 6 : stageWidth >= 980 ? 5 : stageWidth >= 760 ? 4 : 3;
+    const rows = Math.min(5, Math.max(2, Math.ceil(count / maxColumnsPerRow)));
+    const columns = Math.max(1, Math.ceil(count / rows));
+
+    container.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+    container.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+
+    container.classList.remove('rows-2', 'rows-3', 'rows-4', 'rows-5');
+    container.classList.add(`rows-${rows}`);
+
+    stage.classList.remove('compact-header', 'ultra-compact-header');
+    if (rows >= 5) {
+        stage.classList.add('ultra-compact-header');
+    } else if (rows >= 4) {
+        stage.classList.add('compact-header');
+    }
+}
+
+function addSponsorCard(sponsor) {
+    const container = document.getElementById('sponsor_grid_container');
+    if (!container) return null;
+
+    const key = getSponsorKey(sponsor);
+    if (sponsorSeenKeys.has(key)) return null;
+    sponsorSeenKeys.add(key);
+
+    const card = document.createElement('div');
+    card.className = 'sponsor-card';
+    const logoUrl = getSponsorLogoUrl(sponsor);
+    if (logoUrl) {
+        const img = document.createElement('img');
+        img.className = 'sponsor-card-logo';
+        img.alt = sponsor?.name || 'Logo sponsor';
+        img.src = logoUrl;
+        img.loading = 'eager';
+        img.decoding = 'async';
+        img.onerror = function onLogoError() { this.remove(); };
+
+        const name = document.createElement('div');
+        name.className = 'sponsor-card-name';
+        name.textContent = sponsor?.name || 'Sponsor';
+
+        card.appendChild(img);
+        card.appendChild(name);
+    } else {
+        const name = document.createElement('div');
+        name.className = 'sponsor-card-name sponsor-card-name--solo';
+        name.textContent = sponsor?.name || 'Sponsor';
+        card.appendChild(name);
+    }
+
+    container.appendChild(card);
+    return card;
+}
+
+function runSponsorReveal(cards, nextIndex) {
+    const stage = document.getElementById('sponsor_stage');
+    if (!stage || !stage.classList.contains('is-running')) return;
+
+    if (nextIndex >= cards.length) {
+        sponsorIntroTimeoutId = window.setTimeout(() => {
+            beginSponsorReset();
+        }, SPONSOR_HOLD_AFTER_FULL_MS);
+        return;
+    }
+
+    const card = cards[nextIndex];
+    if (card) {
+        animateSponsorToGrid(card, nextIndex, cards.length);
+    }
+
+    sponsorCurrentIndex = nextIndex + 1;
+    sponsorCycleIntervalId = window.setTimeout(() => {
+        runSponsorReveal(cards, nextIndex + 1);
+    }, getSponsorRevealStepDurationMs());
+}
+
+function animateSponsorToGrid(card, cardIndex, totalCards) {
+    const stage = document.getElementById('sponsor_stage');
+    const container = document.getElementById('sponsor_grid_container');
+    if (!stage || !container) return;
+
+    const stageWidth = stage.clientWidth || window.innerWidth || 1200;
+    const maxColumnsPerRow = stageWidth >= 1200 ? 6 : stageWidth >= 980 ? 5 : stageWidth >= 760 ? 4 : 3;
+    const rows = Math.min(5, Math.max(2, Math.ceil(totalCards / maxColumnsPerRow)));
+    const columns = Math.max(1, Math.ceil(totalCards / rows));
+
+    const row = Math.floor(cardIndex / columns);
+    const col = cardIndex % columns;
+
+    const containerRect = container.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+
+    const gapPx = rows >= 5 ? 8 : rows >= 4 ? 10 : 12;
+    const availableWidth = containerRect.width * 0.88;
+    const cardWidth = (availableWidth - (columns - 1) * gapPx) / columns;
+    const availableHeight = containerRect.height * 0.85;
+    const cardHeight = (availableHeight - (rows - 1) * gapPx) / rows;
+
+    const gridStartX = containerRect.left + (containerRect.width - availableWidth) / 2;
+    const gridStartY = containerRect.top + containerRect.height * 0.08;
+
+    const finalX = gridStartX + col * (cardWidth + gapPx) + cardWidth / 2;
+    const finalY = gridStartY + row * (cardHeight + gapPx) + cardHeight / 2;
+
+    const startX = window.innerWidth / 2;
+    const startY = window.innerHeight / 2;
+
+    const originalVisibility = card.style.visibility;
+    const originalOpacity = card.style.opacity;
+    const originalTransform = card.style.transform;
+    const originalTransition = card.style.transition;
+    const startRect = card.getBoundingClientRect();
+    const holdDuration = 450;
+    const moveDuration = 700;
+
+    card.style.visibility = 'hidden';
+    card.style.opacity = '0';
+    card.style.transform = 'none';
+
+    const motionCard = card.cloneNode(true);
+    motionCard.classList.add('is-motion-clone');
+    motionCard.classList.remove('is-visible-big', 'is-visible-shrink');
+    motionCard.style.position = 'fixed';
+    motionCard.style.left = startX + 'px';
+    motionCard.style.top = startY + 'px';
+    motionCard.style.width = startRect.width + 'px';
+    motionCard.style.height = startRect.height + 'px';
+    motionCard.style.margin = '0';
+    motionCard.style.pointerEvents = 'none';
+    motionCard.style.visibility = 'visible';
+    motionCard.style.opacity = '1';
+    motionCard.style.zIndex = '100';
+    motionCard.style.transition = 'none';
+    motionCard.style.transformOrigin = 'center center';
+    motionCard.style.transform = 'translate(-50%, -50%) scale(3.5)';
+
+    document.body.appendChild(motionCard);
+
+    window.setTimeout(() => {
+        const startTime = performance.now();
+
+        const animate = (now) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(1, elapsed / moveDuration);
+            const easeProgress = progress < 0.5
+                ? 2 * progress * progress
+                : -1 + (4 - 2 * progress) * progress;
+
+            const currentX = startX + (finalX - startX) * easeProgress;
+            const currentY = startY + (finalY - startY) * easeProgress;
+            const currentScale = 3.5 * (1 - easeProgress) + 1 * easeProgress;
+
+            motionCard.style.left = currentX + 'px';
+            motionCard.style.top = currentY + 'px';
+            motionCard.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+                return;
+            }
+
+            motionCard.remove();
+            card.style.visibility = originalVisibility || 'visible';
+            card.style.opacity = originalOpacity || '1';
+            card.style.transform = originalTransform || 'none';
+            card.style.transition = originalTransition || '';
+        };
+
+        requestAnimationFrame(animate);
+    }, holdDuration);
+}
+
+function beginSponsorReset() {
+    const stage = document.getElementById('sponsor_stage');
+    const container = document.getElementById('sponsor_grid_container');
+    if (!stage || !container || !stage.classList.contains('is-running')) return;
+
+    container.classList.add('is-resetting');
+    sponsorShrinkTimeoutId = window.setTimeout(() => {
+        if (!stage.classList.contains('is-running')) return;
+        startSponsorCycle();
+    }, SPONSOR_RESET_ANIM_MS);
+}
+
+async function startSponsorCycle() {
+    const token = ++sponsorCycleToken;
+    clearSponsorTimers();
+    sponsorCurrentIndex = 0;
+    sponsorSeenKeys = new Set();
+    renderSponsorShowcaseEmpty();
+
+    const sponsors = getSponsorList();
+    if (sponsors.length === 0) return;
+
+    await preloadSponsorAssets(getSponsorAssetUrls(sponsors));
+    if (token !== sponsorCycleToken) return;
+
+    configureSponsorGridLayout(sponsors.length);
+
+    const cards = sponsors.map(addSponsorCard).filter(Boolean);
+    if (!cards.length) return;
+
+    runSponsorHeaderIntro(cards);
+}
+
+function resetSponsorHeaderIntroState() {
+    const titleSection = document.getElementById('sponsor_title_section');
+    const logoLeft = document.getElementById('sponsor_logo_left');
+    const logoRight = document.getElementById('sponsor_logo_right');
+
+    if (!titleSection || !logoLeft || !logoRight) return;
+
+    [logoLeft, logoRight].forEach(logo => {
+        logo.style.transition = '';
+        logo.style.transform = '';
+        logo.style.opacity = '';
+        logo.style.willChange = '';
+    });
+}
+
+function animateHeaderLogoFromCenter(logoEl, stageRect, durationMs) {
+    if (!logoEl || !stageRect) return;
+
+    const rect = logoEl.getBoundingClientRect();
+    const targetCenterX = rect.left + rect.width / 2;
+    const targetCenterY = rect.top + rect.height / 2;
+    const startCenterX = stageRect.left + stageRect.width / 2;
+    const startCenterY = stageRect.top + stageRect.height / 2;
+    const deltaX = startCenterX - targetCenterX;
+    const deltaY = startCenterY - targetCenterY;
+
+    logoEl.style.willChange = 'transform, opacity';
+    logoEl.style.transition = 'none';
+    logoEl.style.opacity = '0';
+    logoEl.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(2.2)`;
+
+    void logoEl.offsetWidth;
+
+    logoEl.style.transition = `transform ${durationMs}ms cubic-bezier(.2,.8,.2,1), opacity ${Math.round(durationMs * 0.8)}ms ease`;
+    logoEl.style.opacity = '1';
+    logoEl.style.transform = 'translate(0, 0) scale(1)';
+}
+
+function runSponsorHeaderIntro(cards) {
+    const stage = document.getElementById('sponsor_stage');
+    const logoLeft = document.getElementById('sponsor_logo_left');
+    const logoRight = document.getElementById('sponsor_logo_right');
+
+    if (!stage || !stage.classList.contains('is-running')) return;
+
+    resetSponsorHeaderIntroState();
+
+    if (!logoLeft || !logoRight) {
+        sponsorCycleIntervalId = window.setTimeout(() => {
+            runSponsorReveal(cards, 0);
+        }, 120);
+        return;
+    }
+
+    const stageRect = stage.getBoundingClientRect();
+
+    logoRight.style.transition = 'none';
+    logoRight.style.opacity = '0';
+    logoRight.style.transform = 'translate(0, 0) scale(1)';
+
+    animateHeaderLogoFromCenter(logoLeft, stageRect, SPONSOR_LOGO_INTRO_MS);
+
+    sponsorCycleIntervalId = window.setTimeout(() => {
+        if (!stage.classList.contains('is-running')) return;
+        animateHeaderLogoFromCenter(logoRight, stageRect, SPONSOR_LOGO_INTRO_MS);
+    }, SPONSOR_LOGO_INTRO_MS + 120);
+
+    sponsorIntroTimeoutId = window.setTimeout(() => {
+        if (!stage.classList.contains('is-running')) return;
+        runSponsorReveal(cards, 0);
+    }, (SPONSOR_LOGO_INTRO_MS * 2) + 260);
+}
+
+function initSponsorVideoTab() {
+    setSponsorSpeed(config.sponsor_speed || 'normal');
+    if (!sponsorResizeBound) {
+        sponsorResizeBound = true;
+        window.addEventListener('resize', () => {
+            const stage = document.getElementById('sponsor_stage');
+            if (!stage || !stage.classList.contains('is-running')) return;
+            startSponsorCycle();
+        });
+    }
+    stopSponsorAnimation();
+}
+
+function setSponsorSpeed(speed) {
+    const next = ['slow', 'normal', 'fast'].includes(speed) ? speed : 'normal';
+    const stage = document.getElementById('sponsor_stage');
+    if (!stage) return;
+    stage.classList.remove('speed-slow', 'speed-normal', 'speed-fast');
+    stage.classList.add(`speed-${next}`);
+    config.sponsor_speed = next;
+    const speedSelect = document.getElementById('sponsor_speed');
+    if (speedSelect && speedSelect.value !== next) speedSelect.value = next;
+    save();
+
+    if (stage.classList.contains('is-running')) {
+        startSponsorCycle();
+    }
+}
+
+function updateSponsorToggleButton(isRunning) {
+    const btn = document.getElementById('btnSponsorToggle');
+    if (!btn) return;
+    btn.textContent = isRunning ? '⏸️ Pause animation' : '▶️ Reprendre animation';
+    btn.className = isRunning ? 'btn-green' : 'btn-blue';
+}
+
+function startSponsorAnimation() {
+    const stage = document.getElementById('sponsor_stage');
+    if (!stage) return;
+    clearSponsorTimers();
+    stage.classList.add('is-running');
+    updateSponsorToggleButton(true);
+    startSponsorCycle();
+}
+
+function stopSponsorAnimation() {
+    const stage = document.getElementById('sponsor_stage');
+    const container = document.getElementById('sponsor_grid_container');
+    if (!stage) return;
+    clearSponsorTimers();
+    resetSponsorHeaderIntroState();
+    if (container) container.classList.remove('is-resetting');
+    stage.classList.remove('is-running');
+    updateSponsorToggleButton(false);
+}
+
+function toggleSponsorAnimation() {
+    const stage = document.getElementById('sponsor_stage');
+    if (!stage) return;
+
+    if (stage.classList.contains('is-running')) {
+        stopSponsorAnimation();
+        return;
+    }
+    startSponsorAnimation();
+}
+
+function saveSponsorsConfig() {
+    const textarea = document.getElementById('sponsors_list');
+    config.sponsors = normalizeSponsorList(textarea?.value || config.sponsors);
+    if (!config.sponsors.length) config.sponsors = [...defaultSponsorsList];
+    save();
+
+    const stage = document.getElementById('sponsor_stage');
+    if (stage?.classList.contains('is-running')) {
+        startSponsorCycle();
+    }
+}
+
+function openSponsorFullscreen() {
+    const stage = document.getElementById('sponsor_stage');
+    if (!stage) return;
+    if (stage.requestFullscreen) stage.requestFullscreen();
+}
+
+function pickRecorderMimeType() {
+    const candidates = [
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm'
+    ];
+    return candidates.find(type => MediaRecorder.isTypeSupported(type)) || '';
+}
+
+function getProxyBaseUrl() {
+    if (typeof window === 'undefined' || !window.location) return 'http://localhost:3000';
+    if (window.location.protocol === 'file:') return 'http://localhost:3000';
+    return window.location.origin || 'http://localhost:3000';
+}
+
+function getProxiedImageUrl(url) {
+    // Si c'est une URL externe (http/https), passer par le proxy CORS local
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        return `${getProxyBaseUrl()}/proxy-image?url=${encodeURIComponent(url)}`;
+    }
+    // Sinon retourner l'URL locale comme-est
+    return url;
+}
+
+function loadImageForCanvas(url) {
+    return new Promise(resolve => {
+        if (!url) {
+            resolve(null);
+            return;
+        }
+
+        const candidates = [];
+        const proxiedUrl = getProxiedImageUrl(url);
+        if (proxiedUrl && proxiedUrl !== url) candidates.push({ src: proxiedUrl, crossOrigin: 'anonymous', label: 'proxy' });
+        candidates.push({ src: url, crossOrigin: '', label: 'direct' });
+
+        const tryCandidate = (index) => {
+            if (index >= candidates.length) {
+                console.warn(`✗ Impossible de charger: ${url}`);
+                resolve(null);
+                return;
+            }
+
+            const candidate = candidates[index];
+            let settled = false;
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                console.warn(`⏱️ Timeout (${candidate.label}) lors du chargement: ${url}`);
+                tryCandidate(index + 1);
+            }, 8000);
+
+            const img = new Image();
+            if (candidate.crossOrigin) img.crossOrigin = candidate.crossOrigin;
+            img.onload = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                console.log(`✓ Logo chargé (${candidate.label}): ${url}`);
+                resolve(img);
+            };
+            img.onerror = (err) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                console.warn(`✗ Impossible de charger (${candidate.label}): ${url}`, err);
+                tryCandidate(index + 1);
+            };
+            img.onabort = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                console.warn(`✗ Chargement annulé (${candidate.label}): ${url}`);
+                tryCandidate(index + 1);
+            };
+            img.src = candidate.src;
+        };
+
+        tryCandidate(0);
+    });
+}
+
+function getSponsorVideoGridLayout(total, stageWidth) {
+    const count = Math.max(0, total || 0);
+    const width = stageWidth || 1280;
+    const maxColumnsPerRow = width >= 1200 ? 6 : width >= 980 ? 5 : width >= 760 ? 4 : 3;
+    const rows = Math.min(5, Math.max(2, Math.ceil(count / Math.max(1, maxColumnsPerRow))));
+    const columns = Math.max(1, Math.ceil(count / rows));
+    return { rows, columns };
+}
+
+function getSponsorVideoStateAt(sponsors, tMs, revealStepMs, holdMs, resetMs, stageWidth) {
+    if (!sponsors.length) {
+        return { mode: 'empty', appearedCount: 0, resetProgress: 0, local: 0, layout: getSponsorVideoGridLayout(0, stageWidth) };
+    }
+
+    const revealTotalMs = Math.max(0, (sponsors.length - 1) * revealStepMs);
+    const loopDurationMs = INTRO_TOTAL_DURATION_MS + revealTotalMs + holdMs + resetMs;
+    const local = ((tMs % loopDurationMs) + loopDurationMs) % loopDurationMs;
+    const layout = getSponsorVideoGridLayout(sponsors.length, stageWidth);
+
+    // Phase intro: affichage des logos CMPN et Thor
+    if (local < INTRO_TOTAL_DURATION_MS) {
+        if (local < INTRO_CMPN_DURATION_MS) {
+            return {
+                mode: 'intro-cmpn',
+                appearedCount: 0,
+                introProgress: Math.min(1, local / INTRO_CMPN_DURATION_MS),
+                resetProgress: 0,
+                local,
+                layout
+            };
+        } else {
+            return {
+                mode: 'intro-thor',
+                appearedCount: 0,
+                introProgress: Math.min(1, (local - INTRO_CMPN_DURATION_MS) / INTRO_THOR_DURATION_MS),
+                resetProgress: 0,
+                local,
+                layout
+            };
+        }
+    }
+
+    const localAfterIntro = local - INTRO_TOTAL_DURATION_MS;
+    if (localAfterIntro < revealTotalMs) {
+        return {
+            mode: 'reveal',
+            appearedCount: Math.min(sponsors.length, Math.floor(localAfterIntro / revealStepMs) + 1),
+            resetProgress: 0,
+            local,
+            revealLocal: localAfterIntro,
+            layout
+        };
+    }
+
+    if (localAfterIntro < revealTotalMs + holdMs) {
+        return {
+            mode: 'hold',
+            appearedCount: sponsors.length,
+            resetProgress: 0,
+            local,
+            revealLocal: localAfterIntro,
+            layout
+        };
+    }
+
+    return {
+        mode: 'reset',
+        appearedCount: sponsors.length,
+            resetProgress: Math.min(1, (localAfterIntro - revealTotalMs - holdMs) / resetMs),
+        local,
+        revealLocal: localAfterIntro,
+        layout
+    };
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+}
+
+function drawSponsorVideoFrame(ctx, w, h, state, sponsors, assets, revealStepMs) {
+    // Phase intro: affichage des logos CMPN et Thor
+    // Background commun
+    const r = Math.max(w, h) * 1.2;
+    const bg = ctx.createRadialGradient(w * 0.2, h * 0.2, 30, w * 0.5, h * 0.5, r);
+    bg.addColorStop(0, '#0a4c7d');
+    bg.addColorStop(0.45, '#032441');
+    bg.addColorStop(1, '#000d1a');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    const hGradient = ctx.createLinearGradient(0, 0, w, 0);
+    hGradient.addColorStop(0, 'rgba(2,21,41,0.95)');
+    hGradient.addColorStop(0.22, 'rgba(2,21,41,0.1)');
+    hGradient.addColorStop(0.78, 'rgba(2,21,41,0.1)');
+    hGradient.addColorStop(1, 'rgba(2,21,41,0.95)');
+    ctx.fillStyle = hGradient;
+    ctx.fillRect(0, 0, w, h);
+
+    const overlay = ctx.createLinearGradient(0, 0, 0, h);
+    overlay.addColorStop(0, 'rgba(255,255,255,0.16)');
+    overlay.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, 0, w, h);
+
+    const rows = state.layout?.rows || 2;
+    const columns = state.layout?.columns || 1;
+    const compactHeader = rows >= 4;
+    const ultraCompactHeader = rows >= 5;
+
+    const headerHeight = ultraCompactHeader ? h * 0.12 : compactHeader ? h * 0.15 : h * 0.18;
+    const headerGrad = ctx.createLinearGradient(0, 0, 0, headerHeight);
+    headerGrad.addColorStop(0, 'rgba(10,76,125,0.6)');
+    headerGrad.addColorStop(1, 'rgba(3,36,65,0.4)');
+    ctx.fillStyle = headerGrad;
+    ctx.fillRect(0, 0, w, headerHeight);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, headerHeight);
+    ctx.lineTo(w, headerHeight);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = ultraCompactHeader ? '800 40px Segoe UI' : compactHeader ? '800 52px Segoe UI' : '800 62px Segoe UI';
+    ctx.fillText('Rallye CMPN PACA', w / 2, headerHeight * 0.55);
+    ctx.font = ultraCompactHeader ? '700 26px Segoe UI' : compactHeader ? '700 34px Segoe UI' : '700 40px Segoe UI';
+    ctx.fillText('Le Thor 2026', w / 2, headerHeight * 0.82);
+
+    // Phase intro: affichage animé des logos
+    if (state.mode === 'intro-cmpn' || state.mode === 'intro-thor') {
+        const progress = state.introProgress || 0;
+        const logo = state.mode === 'intro-cmpn' ? assets.introLogoLeft : assets.introLogoRight;
+        
+        if (logo) {
+            // Deux phases: hold au centre, puis move vers position
+            const holdPhase = progress < (INTRO_LOGO_HOLD_MS / (INTRO_LOGO_HOLD_MS + INTRO_LOGO_MOVE_MS));
+            const moveProgress = holdPhase ? 0 : (progress - (INTRO_LOGO_HOLD_MS / (INTRO_LOGO_HOLD_MS + INTRO_LOGO_MOVE_MS))) / (INTRO_LOGO_MOVE_MS / (INTRO_LOGO_HOLD_MS + INTRO_LOGO_MOVE_MS));
+            
+            // Taille: grand au centre, puis se rétrécit vers position finale
+            const maxLogoSize = Math.min(w * 0.35, h * 0.5);
+            const endLogoSize = ultraCompactHeader ? Math.min(130, w * 0.14) : compactHeader ? Math.min(180, w * 0.18) : Math.min(230, w * 0.22);
+            const logoWidth = maxLogoSize + (endLogoSize - maxLogoSize) * moveProgress;
+            const ratio = logo.height / logo.width || 1;
+            const logoHeight = logoWidth * ratio;
+            
+            // Position: centre au début, puis animation vers gauche ou droite
+            const startX = w / 2 - logoWidth / 2;
+            const endX = state.mode === 'intro-cmpn' ? 
+                (w * 0.018) : 
+                (w * 0.982 - logoWidth);
+            const drawX = startX + (endX - startX) * moveProgress;
+            
+            const startY = h / 2 - logoHeight / 2;
+            const titleCenterY = headerHeight * 0.5;
+            const endY = titleCenterY - logoHeight / 2;
+            const drawY = startY + (endY - startY) * moveProgress;
+            
+            // Opacité: fade in puis stable
+            const fadeIn = Math.min(1, progress * 2);
+            ctx.globalAlpha = fadeIn;
+            ctx.drawImage(logo, drawX, drawY, logoWidth, logoHeight);
+            ctx.globalAlpha = 1;
+        }
+
+        if (state.mode === 'intro-thor' && assets.introLogoLeft) {
+            const titleLogoW = ultraCompactHeader ? Math.min(130, w * 0.14) : compactHeader ? Math.min(180, w * 0.18) : Math.min(230, w * 0.22);
+            const ratio = assets.introLogoLeft.height / assets.introLogoLeft.width || 0.5;
+            const lh = titleLogoW * ratio;
+            const titleCenterY = headerHeight * 0.5;
+            ctx.drawImage(assets.introLogoLeft, w * 0.018, titleCenterY - lh / 2, titleLogoW, lh);
+        }
+        return;  // Retour tôt pendant l'intro
+    }
+
+    // Affichage normal des sponsors (hors phase intro)
+    const leftLogo = assets.introLogoLeft;
+    const rightLogo = assets.introLogoRight;
+    const titleLogoW = ultraCompactHeader ? Math.min(130, w * 0.14) : compactHeader ? Math.min(180, w * 0.18) : Math.min(230, w * 0.22);
+    const titleCenterY = headerHeight * 0.5;
+    if (leftLogo) {
+        const ratio = leftLogo.height / leftLogo.width || 0.5;
+        const lh = titleLogoW * ratio;
+        ctx.drawImage(leftLogo, w * 0.018, titleCenterY - lh / 2, titleLogoW, lh);
+    }
+    if (rightLogo) {
+        const ratio = rightLogo.height / rightLogo.width || 0.5;
+        const lh = titleLogoW * ratio;
+        ctx.drawImage(rightLogo, w * 0.982 - titleLogoW, titleCenterY - lh / 2, titleLogoW, lh);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = ultraCompactHeader ? '800 40px Segoe UI' : compactHeader ? '800 52px Segoe UI' : '800 62px Segoe UI';
+    ctx.fillText('Rallye CMPN PACA', w / 2, headerHeight * 0.55);
+    ctx.font = ultraCompactHeader ? '700 26px Segoe UI' : compactHeader ? '700 34px Segoe UI' : '700 40px Segoe UI';
+    ctx.fillText('Le Thor 2026', w / 2, headerHeight * 0.82);
+
+    const captionHeight = h * 0.09;
+    const showcaseTop = headerHeight + h * 0.03;
+    const showcaseBottom = h - captionHeight - h * 0.03;
+    const availableHeight = Math.max(80, showcaseBottom - showcaseTop);
+    const gridWidth = Math.min(w * 0.9, 1400);
+    const gridX = (w - gridWidth) / 2;
+    const gap = rows >= 5 ? 8 : rows >= 4 ? 10 : 12;
+    const cardWidth = (gridWidth - (columns - 1) * gap) / columns;
+    const cardHeight = (availableHeight - (rows - 1) * gap) / rows;
+
+    const appearedCount = Math.max(0, Math.min(sponsors.length, state.appearedCount || 0));
+    const resetProgress = state.mode === 'reset' ? (state.resetProgress || 0) : 0;
+    const explodeProgress = resetProgress;
+    
+    // Opacité et échelle plus dramatiques pendant l'explosion
+    const fadeCurve = explodeProgress < 0.4 ? 1 : 1 - ((explodeProgress - 0.4) / 0.6) * 0.8;
+    const cardAlpha = state.mode === 'reset' ? fadeCurve : 1;
+    const globalScale = state.mode === 'reset' ? (1 + explodeProgress * 0.15) : 1;
+
+    for (let i = 0; i < appearedCount; i++) {
+        const sponsor = sponsors[i];
+        const row = Math.floor(i / columns);
+        const col = i % columns;
+        if (row >= rows) break;
+
+        const baseX = gridX + col * (cardWidth + gap);
+        const baseY = showcaseTop + row * (cardHeight + gap);
+        const cx = baseX + cardWidth / 2;
+        const cy = baseY + cardHeight / 2;
+
+        let revealAnimProgress = 1;
+        if (state.mode === 'reveal' && revealStepMs > 0) {
+            const baseLocal = Math.max(0, state.revealLocal || 0);
+            const cardLocal = Math.max(0, baseLocal - (i * revealStepMs));
+            if (cardLocal < SPONSOR_CARD_HOLD_MS) {
+                revealAnimProgress = 0;
+            } else {
+                revealAnimProgress = Math.min(1, Math.max(0, (cardLocal - SPONSOR_CARD_HOLD_MS) / SPONSOR_CARD_MOVE_MS));
+            }
+        }
+
+        const cardScale = globalScale * (3.5 - revealAnimProgress * 2.5);
+        const centerScreenX = w / 2;
+        const centerScreenY = h / 2;
+        const drawCx = centerScreenX + (cx - centerScreenX) * revealAnimProgress;
+        const drawCy = centerScreenY + (cy - centerScreenY) * revealAnimProgress;
+        // Explosion avec chaos et mélange
+        const angleBase = ((i + 1) * 137.508) % 360;
+        const angleVariation = (Math.sin(i * 0.7 + explodeProgress * 8) * 25 + Math.cos(i * 1.3) * 15);
+        const explodeAngle = (angleBase + angleVariation) * (Math.PI / 180);
+        
+        // Distance avec accélération puis décélération pour plus d'impact
+        const explosionCurve = explodeProgress < 0.5 ? 
+            (explodeProgress * 2) * (explodeProgress * 2) : 
+            1 - ((1 - explodeProgress) * (1 - explodeProgress)) * 0.4;
+        const baseDistance = Math.min(w, h) * (0.35 + ((i % 7) * 0.06));
+        const explodeDistance = baseDistance * explosionCurve;
+        
+        const explodeX = state.mode === 'reset' ? Math.cos(explodeAngle) * explodeDistance : 0;
+        const explodeY = state.mode === 'reset' ? Math.sin(explodeAngle) * explodeDistance : 0;
+        
+        // Rotation chaotique avec variation par carte
+        const rotationSpeed = 180 + ((i % 3) * 80) + (Math.sin(i * 0.5) * 120);
+        const rotationDirection = (i % 3 === 0 ? 1 : i % 3 === 1 ? -1 : Math.sin(i * 0.3));
+        const explodeRotation = state.mode === 'reset' ? (rotationDirection * rotationSpeed * explodeProgress * (1 + Math.sin(explodeProgress * Math.PI) * 0.3)) : 0;
+        
+        // Variation d'échelle per-card pendant l'explosion
+        const chaosScale = state.mode === 'reset' ? 
+            (1 + Math.sin((i * 1.7 + explodeProgress * 12) * Math.PI) * 0.25) : 1;
+        const finalCardScale = cardScale * chaosScale;
+        const drawW = cardWidth * finalCardScale;
+        const drawH = cardHeight * finalCardScale;
+        const drawX = drawCx - drawW / 2 + explodeX;
+        const drawY = drawCy - drawH / 2 + explodeY;
+
+        ctx.save();
+        ctx.translate(drawCx + explodeX, drawCy + explodeY);
+        if (explodeRotation) {
+            ctx.rotate(explodeRotation * Math.PI / 180);
+        }
+        ctx.globalAlpha = cardAlpha * (0.96 + revealAnimProgress * 0.04);
+        const cardFill = ctx.createLinearGradient(-drawW / 2, -drawH / 2, -drawW / 2, drawH / 2);
+        cardFill.addColorStop(0, '#06325d');
+        cardFill.addColorStop(1, '#021529');
+        ctx.fillStyle = cardFill;
+        ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+        ctx.lineWidth = 1.5;
+        roundedRectPath(ctx, -drawW / 2, -drawH / 2, drawW, drawH, Math.min(12, drawH * 0.16));
+        ctx.fill();
+        ctx.stroke();
+
+        const logoUrl = String(sponsor?.logo || '').trim();
+        const logo = logoUrl ? assets.logoMap.get(logoUrl) : null;
+        if (logo) {
+            const lw = Math.min(drawW * 0.62, drawH * 0.58);
+            const ratio = logo.height / logo.width || 0.5;
+            const lh = lw * ratio;
+            ctx.drawImage(logo, -lw / 2, -drawH * 0.34, lw, lh);
+        }
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        const nameFontSize = Math.round((rows >= 5 ? 16 : rows >= 4 ? 18 : 20) + (1 - revealAnimProgress) * 18);
+        ctx.font = `700 ${nameFontSize}px Segoe UI`;
+        const nameY = logo ? drawH * 0.36 : drawH * 0.08;
+        ctx.fillText(sponsor?.name || 'Sponsor', 0, nameY, drawW * 0.9);
+        ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    roundedRectPath(ctx, w * 0.37, h * 0.92, w * 0.26, h * 0.05, 999);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.font = '700 24px Segoe UI';
+    ctx.fillText('Merci à nos partenaires', w / 2, h * 0.955);
+}
+
+async function downloadSponsorVideo() {
+    if (typeof MediaRecorder === 'undefined') {
+        alert('Votre navigateur ne prend pas en charge l\'export vidéo.');
+        return;
+    }
+
+    const btn = document.getElementById('btnDownloadSponsorVideo');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Génération vidéo HD en cours...';
+    }
+    setVideoExportProgress(2, 'Préparation de la génération...', true);
+
+    try {
+        const sponsors = getSponsorList();
+        if (!sponsors.length) {
+            alert('Aucun sponsor configuré pour générer la vidéo.');
+            return;
+        }
+
+        console.log(`📹 Génération vidéo: ${sponsors.length} sponsors`);
+        sponsors.forEach((s, i) => {
+            console.log(`  ${i + 1}. ${s.name} - Logo: ${s.logo || '(aucun)'}`);
+        });
+
+        const width = 1920;
+        const height = 1080;
+        const fps = 30;
+        const revealStepMs = getSponsorRevealStepDurationMs();
+        const holdMs = SPONSOR_HOLD_AFTER_FULL_MS;
+        const resetMs = SPONSOR_RESET_ANIM_MS;
+        const revealTotalMs = Math.max(0, (sponsors.length - 1) * revealStepMs);
+        const totalDurationMs = INTRO_TOTAL_DURATION_MS + revealTotalMs + SPONSOR_CARD_HOLD_MS + SPONSOR_CARD_MOVE_MS + holdMs + resetMs + 800;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Contexte canvas indisponible.');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        const assetUrls = getSponsorAssetUrls(sponsors);
+        const logoMap = await preloadSponsorAssets(assetUrls, (done, total) => {
+            const pct = 4 + Math.round((done / Math.max(1, total)) * 26);
+            setVideoExportProgress(pct, `Chargement des logos (${done}/${total})...`, true);
+        });
+        const fallbackLogo = logoMap.get('logo_cmpn.png') || null;
+        const introLogoLeft = logoMap.get('logo_paca.png') || null;
+        const introLogoRight = logoMap.get(THOR_LOGO_URL) || null;
+
+        // Ensure local/title logos are available for sponsor cards too
+        if (introLogoLeft && !logoMap.has('logo_paca.png')) logoMap.set('logo_paca.png', introLogoLeft);
+        if (introLogoRight && !logoMap.has(THOR_LOGO_URL)) logoMap.set(THOR_LOGO_URL, introLogoRight);
+        if (fallbackLogo && !logoMap.has('logo_cmpn.png')) logoMap.set('logo_cmpn.png', fallbackLogo);
+
+        const stream = canvas.captureStream(fps);
+        const mimeType = pickRecorderMimeType();
+        const recorderOptions = mimeType ? { mimeType, videoBitsPerSecond: 25000000 } : { videoBitsPerSecond: 25000000 };
+        const recorder = new MediaRecorder(stream, recorderOptions);
+        const chunks = [];
+        recorder.ondataavailable = e => {
+            if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        const done = new Promise((resolve, reject) => {
+            recorder.onerror = e => reject(e.error || new Error('Erreur MediaRecorder'));
+            recorder.onstop = () => resolve();
+        });
+
+        recorder.start(500);
+        setVideoExportProgress(32, 'Rendu des images vidéo...', true);
+        const frameDuration = 1000 / fps;
+        const totalFrames = Math.ceil(totalDurationMs / frameDuration);
+        for (let frame = 0; frame <= totalFrames; frame++) {
+            const tMs = frame * frameDuration;
+            const state = getSponsorVideoStateAt(sponsors, tMs, revealStepMs, holdMs, resetMs, width);
+            drawSponsorVideoFrame(ctx, width, height, state, sponsors, { logoMap, fallbackLogo, introLogoLeft, introLogoRight }, revealStepMs);
+            if (frame % 6 === 0 || frame === totalFrames) {
+                const pct = 32 + Math.round((frame / Math.max(1, totalFrames)) * 63);
+                setVideoExportProgress(pct, 'Encodage de la vidéo...', true);
+            }
+            await new Promise(r => setTimeout(r, frameDuration));
+        }
+
+        setVideoExportProgress(97, 'Finalisation du fichier...', true);
+        recorder.stop();
+        await done;
+
+        const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `video_sponsors_${new Date().toISOString().slice(0, 10)}.webm`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setVideoExportProgress(100, 'Téléchargement prêt', true);
+        window.setTimeout(() => setVideoExportProgress(0, '', false), 1400);
+    } catch (err) {
+        console.error(err);
+        setVideoExportProgress(0, '', false);
+        alert('Impossible de générer la vidéo. Vérifiez les logos/URL et réessayez.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '⬇️ Télécharger la vidéo';
+        }
+    }
 }
 
 function renderJuryInputs() {
@@ -2122,7 +3220,36 @@ function boutonMHE() {
     chargerPilote('Orientation');
 }
 
-function parseChrono(t){ if(!t || !t.includes(':')) return 0; let p=t.split(':'); return (parseInt(p[0])*60)+parseFloat(p[1]); }
+function parseChrono(t){
+    const raw = String(t || '').trim();
+    if (!raw) return 0;
+
+    const normalized = raw.replace(',', '.');
+    if (!normalized.includes(':')) {
+        const asSeconds = parseFloat(normalized);
+        return Number.isFinite(asSeconds) ? Math.max(0, asSeconds) : 0;
+    }
+
+    const parts = normalized.split(':').map(x => x.trim());
+    if (parts.length < 2) return 0;
+
+    const minutes = parseInt(parts[0], 10) || 0;
+    const seconds = parseInt(parts[1], 10) || 0;
+    let millis = 0;
+
+    if (parts.length >= 3) {
+        const milliDigits = parts[2].replace(/\D/g, '').slice(0, 3);
+        millis = milliDigits ? (parseInt(milliDigits.padEnd(3, '0'), 10) || 0) : 0;
+    } else {
+        const fracMatch = parts[1].match(/[.,](\d+)/);
+        if (fracMatch) {
+            const milliDigits = fracMatch[1].replace(/\D/g, '').slice(0, 3);
+            millis = milliDigits ? (parseInt(milliDigits.padEnd(3, '0'), 10) || 0) : 0;
+        }
+    }
+
+    return Math.max(0, (minutes * 60) + seconds + (millis / 1000));
+}
 function parseHMS(t){
     if(!t || !t.includes(':')) return 0;
     const p = t.split(':').map(x => parseInt(x, 10) || 0);
@@ -2142,6 +3269,14 @@ function formatHMS(totalSec){
     return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
 }
 function formatChrono(s){ if(!s) return "00:00"; let m=Math.floor(s/60), sec=Math.floor(s%60); return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; }
+function formatChronoMs(s){
+    if(!Number.isFinite(s) || s <= 0) return "00:00:000";
+    const totalMs = Math.max(0, Math.round(s * 1000));
+    const m = Math.floor(totalMs / 60000);
+    const sec = Math.floor((totalMs % 60000) / 1000);
+    const ms = totalMs % 1000;
+    return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}:${ms.toString().padStart(3,'0')}`;
+}
 function secondsToChrono(sec){ const s=Math.max(0, parseInt(sec||0,10)); const m=Math.floor(s/60), r=s%60; return `${m.toString().padStart(2,'0')}:${r.toString().padStart(2,'0')}`; }
 function parseHHMM(t){ if(!t || !t.includes(':')) return 0; let p=t.split(':'); return (parseInt(p[0])*60)+parseInt(p[1]); }
 function formatHHMM(m){ let h=Math.floor(m/60), min=m%60; return `${h.toString().padStart(2,'0')}:${min.toString().padStart(2,'0')}`; }

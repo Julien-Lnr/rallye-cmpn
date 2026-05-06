@@ -20,6 +20,7 @@ body {
     position: sticky;
     top: 0;
     z-index: 101;
+    overflow: hidden;
 }
 
 .settings-icon {
@@ -155,10 +156,331 @@ th { background: var(--police-blue); color: white; }
     filter: brightness(1.05);
 }
 
+.sponsor-stage {
+    position: relative;
+    width: 100%;
+    min-height: 480px;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+    border-radius: 14px;
+    border: 1px solid #c6d7ea;
+    background: radial-gradient(circle at 20% 20%, #0a4c7d 0%, #032441 45%, #021529 100%);
+    box-shadow: inset 0 0 45px rgba(0, 0, 0, 0.35);
+}
+
+.sponsor-stage.speed-slow {
+    --focus-duration: 6200ms;
+}
+
+.sponsor-stage.speed-normal {
+    --focus-duration: 4500ms;
+}
+
+.sponsor-stage.speed-fast {
+    --focus-duration: 3200ms;
+}
+
+.sponsor-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(2, 21, 41, 0.95) 0%, rgba(2, 21, 41, 0.1) 22%, rgba(2, 21, 41, 0.1) 78%, rgba(2, 21, 41, 0.95) 100%),
+        linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0));
+    z-index: 2;
+}
+
+.sponsor-title-section {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+    text-align: center;
+    color: #fff;
+    padding: 28px 24px;
+    background: linear-gradient(180deg, rgba(10, 76, 125, 0.6) 0%, rgba(3, 36, 65, 0.4) 100%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+}
+
+.sponsor-title-brand {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sponsor-title-center {
+    flex: 1 1 auto;
+}
+
+.sponsor-title-main {
+    font-size: clamp(1.8rem, 3.8vw, 3.4rem);
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
+
+.sponsor-title-sub {
+    margin-top: 8px;
+    font-size: clamp(1.1rem, 2.2vw, 1.8rem);
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.sponsor-title-logo {
+    width: min(280px, 28vw);
+    height: auto;
+    filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.45));
+}
+
+.sponsor-video-progress {
+    margin-top: 10px;
+    width: min(460px, 100%);
+}
+
+.sponsor-video-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #1f2b3a;
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+}
+
+.sponsor-video-progress-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: #d9e3f0;
+    overflow: hidden;
+    border: 1px solid #c3d2e6;
+}
+
+.sponsor-video-progress-bar {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #0077cc 0%, #00a3ff 100%);
+    transition: width 160ms linear;
+}
+
+.sponsor-showcase {
+    position: relative;
+    flex: 1 1 auto;
+    z-index: 3;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 10px 16px 8px;
+    overflow: visible;
+}
+
+.sponsor-grid-container {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    max-width: 1200px;
+    margin: 0 auto;
+    align-items: stretch;
+    perspective: 1000px;
+}
+
+.sponsor-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 8px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(255,255,255,0.2);
+    background: rgba(2, 21, 41, 0.6);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.22);
+    min-height: 128px;
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+    transition: opacity 300ms ease, transform 420ms cubic-bezier(.2,.8,.2,1);
+    z-index: 1;
+}
+
+.sponsor-card.is-visible-big {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(3.5);
+    z-index: 100;
+    animation: none;
+}
+
+.sponsor-card.is-visible-shrink {
+    position: fixed;
+    z-index: 100;
+    transform-origin: center center;
+}
+
+.sponsor-grid-container.is-resetting .sponsor-card.is-visible {
+    animation: sponsorCardReset 850ms cubic-bezier(.2,.8,.2,1) forwards;
+}
+
+.sponsor-card-logo {
+    width: min(120px, 82%);
+    max-height: 70px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+}
+
+.sponsor-card-name {
+    color: #fff;
+    font-size: clamp(0.78rem, 1.35vw, 1rem);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    text-align: center;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+.sponsor-grid-container.rows-2 {
+    gap: 12px;
+}
+
+.sponsor-grid-container.rows-2 .sponsor-card {
+    min-height: 126px;
+    padding: 10px 8px;
+}
+
+.sponsor-grid-container.rows-2 .sponsor-card-logo {
+    max-height: 72px;
+}
+
+.sponsor-grid-container.rows-2 .sponsor-card-name {
+    font-size: clamp(0.78rem, 1.35vw, 1rem);
+}
+
+.sponsor-grid-container.rows-3 {
+    gap: 10px;
+}
+
+.sponsor-grid-container.rows-3 .sponsor-card {
+    min-height: 102px;
+    padding: 8px 6px;
+}
+
+.sponsor-grid-container.rows-3 .sponsor-card-logo {
+    max-height: 60px;
+}
+
+.sponsor-grid-container.rows-3 .sponsor-card-name {
+    font-size: clamp(0.72rem, 1.2vw, 0.92rem);
+}
+
+.sponsor-grid-container.rows-4 {
+    gap: 12px;
+}
+
+.sponsor-grid-container.rows-4 .sponsor-card {
+    min-height: 104px;
+    padding: 8px;
+}
+
+.sponsor-grid-container.rows-4 .sponsor-card-logo {
+    max-height: 60px;
+}
+
+.sponsor-grid-container.rows-4 .sponsor-card-name {
+    font-size: clamp(0.74rem, 1.15vw, 0.94rem);
+}
+
+.sponsor-grid-container.rows-5 {
+    gap: 10px;
+}
+
+.sponsor-grid-container.rows-5 .sponsor-card {
+    min-height: 94px;
+    padding: 7px;
+    border-radius: 10px;
+}
+
+.sponsor-grid-container.rows-5 .sponsor-card-logo {
+    max-height: 54px;
+}
+
+.sponsor-grid-container.rows-5 .sponsor-card-name {
+    font-size: clamp(0.69rem, 1.08vw, 0.86rem);
+    line-height: 1.15;
+}
+
+.sponsor-stage.compact-header .sponsor-title-section {
+    padding: 16px 16px;
+    gap: 14px;
+}
+
+.sponsor-stage.compact-header .sponsor-title-logo {
+    width: min(210px, 22vw);
+}
+
+.sponsor-stage.compact-header .sponsor-title-main {
+    font-size: clamp(1.35rem, 2.8vw, 2.2rem);
+}
+
+.sponsor-stage.compact-header .sponsor-title-sub {
+    margin-top: 4px;
+    font-size: clamp(0.88rem, 1.9vw, 1.3rem);
+}
+
+.sponsor-stage.ultra-compact-header .sponsor-title-section {
+    padding: 6px 10px;
+    gap: 8px;
+}
+
+.sponsor-stage.ultra-compact-header .sponsor-title-logo {
+    width: min(130px, 14vw);
+}
+
+.sponsor-stage.ultra-compact-header .sponsor-title-main {
+    font-size: clamp(0.98rem, 2.1vw, 1.45rem);
+}
+
+.sponsor-stage.ultra-compact-header .sponsor-title-sub {
+    margin-top: 2px;
+    font-size: clamp(0.68rem, 1.28vw, 0.9rem);
+}
+
+.sponsor-caption {
+    position: relative;
+    z-index: 3;
+    padding: 12px 14px;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    background: rgba(0, 0, 0, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    text-align: center;
+    margin: 0 auto;
+}
+
 @keyframes jurySavePulse {
     0% { transform: scale(1); }
     35% { transform: scale(1.06); }
     100% { transform: scale(1); }
+}
+
+@keyframes sponsorCardReset {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(10px) scale(0.9); }
 }
 
 @media (max-width: 768px) {
@@ -236,5 +558,79 @@ th { background: var(--police-blue); color: white; }
     #tableInscrits td.cell-actions button {
         padding: 6px 8px;
         font-size: 0.85em;
+    }
+
+    .sponsor-stage {
+        min-height: 420px;
+    }
+
+    .sponsor-title-section {
+        padding: 16px 12px;
+        gap: 12px;
+    }
+
+    .sponsor-title-logo {
+        width: min(200px, 24vw);
+    }
+
+    .sponsor-title-main {
+        font-size: clamp(1.3rem, 2.8vw, 2.4rem);
+    }
+
+    .sponsor-grid-container {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 0;
+    }
+
+    .sponsor-grid-container.rows-2 .sponsor-card {
+        min-height: 84px;
+        padding: 6px;
+    }
+
+    .sponsor-grid-container.rows-2 .sponsor-card-logo {
+        width: min(90px, 76%);
+        max-height: 42px;
+    }
+
+    .sponsor-grid-container.rows-2 .sponsor-card-name {
+        font-size: clamp(0.62rem, 1.8vw, 0.8rem);
+    }
+
+    .sponsor-grid-container.rows-3 .sponsor-card,
+    .sponsor-grid-container.rows-4 .sponsor-card,
+    .sponsor-grid-container.rows-5 .sponsor-card {
+        min-height: 70px;
+        padding: 4px;
+        gap: 4px;
+    }
+
+    .sponsor-grid-container.rows-3 .sponsor-card-logo,
+    .sponsor-grid-container.rows-4 .sponsor-card-logo,
+    .sponsor-grid-container.rows-5 .sponsor-card-logo {
+        width: min(72px, 72%);
+        max-height: 32px;
+    }
+
+    .sponsor-grid-container.rows-3 .sponsor-card-name,
+    .sponsor-grid-container.rows-4 .sponsor-card-name,
+    .sponsor-grid-container.rows-5 .sponsor-card-name {
+        font-size: clamp(0.54rem, 1.6vw, 0.68rem);
+        line-height: 1.05;
+    }
+
+    .sponsor-showcase {
+        padding: 12px 6px;
+    }
+
+    .sponsor-title-sub {
+        font-size: clamp(0.9rem, 1.8vw, 1.4rem);
+        margin-top: 4px;
+    }
+
+    .sponsor-caption {
+        font-size: 0.85rem;
+        padding: 8px 10px;
     }
 }

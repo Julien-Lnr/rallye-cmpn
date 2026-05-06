@@ -27,6 +27,7 @@
     <button class="tab-link" onclick="openTab('Orientation')">6. Orientation & Bases Chrono</button>
     <button class="tab-link" onclick="openTab('Classement')">7. Classements</button>
     <button class="tab-link" onclick="openTab('Reglement')">8. Règlement</button>
+    <button class="tab-link" onclick="openTab('VideoSponsors')">9. Vidéo Sponsors</button>
     
     <div style="margin-left: auto; display: flex; align-items: center; padding-right: 20px;">
         <div class="settings-icon" onclick="openTab('Points')" title="Paramètres des points" style="font-size: 35px; color: var(--police-blue);">⚙️</div>
@@ -117,7 +118,7 @@
                 <button onclick="ajouterPilote()">Ajouter manuellement</button>
             </div>
             <table id="tableInscrits">
-                <thead><tr><th>Nom</th><th>Prénom</th><th>Catégorie</th><th>Action</th></tr></thead>
+                <thead><tr><th>Nom</th><th>Prénom</th><th>00Catégorie</th><th>Action</th></tr></thead>
                 <tbody></tbody>
             </table>
         </div>
@@ -195,7 +196,7 @@
                     <div>
                         <h3 id="titre_tir" style="border-bottom: 1px solid #eee; padding-bottom:5px; color: var(--police-red);">Tir Laser : 0 pt</h3>
                         <label id="lbl_t_rates">Tirs manqués :</label><input type="number" id="t_rates" min="0" value="0">
-                        <label>Temps du concurrent (MM:SS) :</label><input type="text" id="t_temps" class="time-mask" maxlength="5" placeholder="00:00">
+                        <label>Temps du concurrent (MM:SS:mmm) :</label><input type="text" id="t_temps" class="time-mask-ms" maxlength="9" placeholder="00:00:000">
                     </div>
                 </div>
                 <button class="btn-green" style="margin-top:20px;" onclick="validerSaisie('Maniabilite')">💾 Enregistrer Mani/Tir</button>
@@ -354,6 +355,70 @@
             <a href="13_reglement_rallye_motos_police_2025.pdf" download class="btn-green">⬇️ Télécharger le PDF</a>
         </div>
         <iframe src="13_reglement_rallye_motos_police_2025.pdf#toolbar=1" title="Règlement Rallye" style="width:100%; height:80vh; border:1px solid #ddd; border-radius:8px;"></iframe>
+    </div>
+</div>
+
+<div id="VideoSponsors" class="tab-content" style="display:none;">
+    <div class="card">
+        <h2>🎬 Vidéo Sponsors</h2>
+        <p style="margin-top:0; color:#555;">Cette scène affiche une animation continue des sponsors, prête à être utilisée pendant l'événement.</p>
+
+        <div class="grid" style="margin-bottom: 15px;">
+            <div>
+                <label>Vitesse de défilement :</label>
+                <select id="sponsor_speed" onchange="setSponsorSpeed(this.value)">
+                    <option value="slow">Lente</option>
+                    <option value="normal" selected>Normale</option>
+                    <option value="fast">Rapide</option>
+                </select>
+            </div>
+            <div>
+                <label>Actions :</label>
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button id="btnSponsorToggle" class="btn-green" onclick="toggleSponsorAnimation()">⏸️ Pause animation</button>
+                    <button class="btn-blue" onclick="openSponsorFullscreen()">🖥️ Plein écran</button>
+                    <button id="btnDownloadSponsorVideo" class="btn-import" onclick="downloadSponsorVideo()">⬇️ Télécharger la vidéo</button>
+                </div>
+                <div id="sponsor_video_progress" class="sponsor-video-progress" aria-live="polite" style="display:none;">
+                    <div class="sponsor-video-progress-meta">
+                        <span id="sponsor_video_progress_label">Préparation...</span>
+                        <span id="sponsor_video_progress_value">0%</span>
+                    </div>
+                    <div class="sponsor-video-progress-track">
+                        <div id="sponsor_video_progress_bar" class="sponsor-video-progress-bar" style="width:0%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <label for="sponsors_list">Liste des sponsors (format: Nom | URL du logo) :</label>
+        <div style="margin:6px 0 8px; color:#666; font-size:0.9em;">Exemple: Michelin | https://.../logo.png</div>
+        <textarea id="sponsors_list" rows="4" oninput="saveSponsorsConfig()" style="width:100%; min-height: 95px; padding: 10px; border:1px solid #ccc; border-radius:6px; font-family: inherit;"></textarea>
+
+        <div id="sponsor_stage" class="sponsor-stage is-running speed-normal" style="margin-top: 18px;">
+            <!-- Title section: always visible -->
+            <div class="sponsor-title-section" id="sponsor_title_section">
+                <div class="sponsor-title-brand sponsor-title-brand-left" id="sponsor_logo_left">
+                    <img class="sponsor-title-logo" src="logo_paca.png" alt="Logo PACA">
+                </div>
+                <div class="sponsor-title-text sponsor-title-center">
+                    <div class="sponsor-title-main">Rallye CMPN PACA</div>
+                    <div class="sponsor-title-sub">Le Thor 2026</div>
+                </div>
+                <div class="sponsor-title-brand sponsor-title-brand-right" id="sponsor_logo_right">
+                    <img class="sponsor-title-logo" src="logo le thor.png" alt="Logo Ville du Thor">
+                </div>
+            </div>
+
+            <!-- Overlay and sponsors bottom section -->
+            <div class="sponsor-overlay"></div>
+            <div class="sponsor-showcase" id="sponsor_showcase">
+                <div class="sponsor-grid-container" id="sponsor_grid_container">
+                    <!-- Sponsors will be added dynamically here -->
+                </div>
+            </div>
+            <div class="sponsor-caption">Merci à nos partenaires</div>
+        </div>
     </div>
 </div>
 
