@@ -959,7 +959,7 @@ function calculDirect(onglet) {
 
         const tirsRates = parseInt(document.getElementById('t_rates').value || '0', 10);
         const tempsTir = parseChrono(document.getElementById('t_temps').value);
-        const tempsIdeal = parseChrono(secondsToChrono(config.t_ideal));
+        const tempsIdeal = config.t_ideal;
         const retardDixiemes = Math.max(0, Math.round((tempsTir - tempsIdeal) * 10));
         const pointsTir = (tirsRates * config.tir) + (retardDixiemes * config.tir_retard);
         document.getElementById('titre_tir').innerText = `Tir Laser : ${pointsTir} pt(s)`;
@@ -1801,7 +1801,7 @@ function validerSaisie(onglet) {
         p.pointsMani = (p.det.m_cones * config.cone) + (p.det.m_pieds * config.pied) + (p.det.m_atels * config.atelier) + (p.det.m_chute * config.chute);
 
         const tempsTir = parseChrono(p.det.t_temps);
-        const tempsIdeal = parseChrono(secondsToChrono(config.t_ideal));
+        const tempsIdeal = config.t_ideal;
         const retardDixiemes = Math.max(0, Math.round((tempsTir - tempsIdeal) * 10));
         p.pointsTir = (p.det.t_rates * config.tir) + (retardDixiemes * config.tir_retard);
 
@@ -1875,7 +1875,7 @@ function saveConfig() {
     config.mhe_points = parseInt(document.getElementById('p_mhe')?.value || config.mhe_points, 10);
     config.tenue = parseInt(document.getElementById('p_tenue')?.value || config.tenue, 10);
     config.briefing = parseInt(document.getElementById('p_briefing')?.value || config.briefing, 10);
-    config.t_ideal = parseChrono(document.getElementById('t_ideal')?.value || secondsToChrono(config.t_ideal));
+    config.t_ideal = parseChrono(document.getElementById('t_ideal')?.value || formatChronoMs(config.t_ideal));
     config.o_dist_ideal = parseFloat(document.getElementById('o_dist_ideal')?.value || config.o_dist_ideal);
     config.nb_bases = parseInt(document.getElementById('p_nb_bases')?.value || config.nb_bases, 10);
     config.nb_radars = Math.max(0, parseInt(document.getElementById('p_nb_radars')?.value || config.nb_radars, 10) || 0);
@@ -1937,7 +1937,7 @@ function chargerConfigVisual() {
     setValue('p_mhe', config.mhe_points);
     setValue('p_tenue', config.tenue);
     setValue('p_briefing', config.briefing);
-    setValue('t_ideal', secondsToChrono(config.t_ideal));
+    setValue('t_ideal', formatChronoMs(config.t_ideal));
     setValue('o_dist_ideal', config.o_dist_ideal);
     setValue('p_nb_bases', config.nb_bases);
     setValue('p_nb_radars', config.nb_radars);
