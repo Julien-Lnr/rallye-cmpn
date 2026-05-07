@@ -77,6 +77,7 @@
                 <div>
                     <h3 style="color: var(--police-blue); margin-top:0;">🗺️ Parcours Routier & Bases Chrono</h3>
                     <label>CP manquant (pts) :</label><input type="number" id="p_cp" min="0" value="250" onchange="saveConfig()">
+                    <label>CP en sens inverse (pts) :</label><input type="number" id="p_cp_inverse" min="0" value="500" onchange="saveConfig()">
                     <label>Bases Chrono (pts par seconde d'écart) :</label><input type="number" id="p_regu" min="0" value="10" onchange="saveConfig()">
                     <label>Faute en Zone Bases Chrono (pts) :</label><input type="number" id="p_regu_f" min="0" value="600" onchange="saveConfig()">
                     <label>Non passage Base Chrono (pts) :</label><input type="number" id="p_non_passage" min="0" value="20000" onchange="saveConfig()">
@@ -242,6 +243,9 @@
             <label>Départ (HH:MM) :</label><input type="text" id="o_h_dep" class="time-mask" maxlength="5" placeholder="08:00">
             <label>Arrivée (HH:MM) :</label><input type="text" id="o_h_arr" class="time-mask" maxlength="5" placeholder="10:30">
             <div id="calc_temps" style="margin-top: 10px; font-weight:bold; color: var(--police-blue);">Durée : 00:00</div>
+            <div style="margin-top: 8px; padding: 8px; background: #fff3f3; border-left: 3px solid var(--police-red); font-size: 0.9em; color: var(--police-red);">
+                ⚠️ Supérieur à 5 heures = MHE (100 000 pts)
+            </div>
         </div>
         <div>
             <h3 style="margin-top:0; border-bottom: 1px solid #ddd; padding-bottom:5px;">📍 Kilométrage</h3>
@@ -255,6 +259,7 @@
         <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #ffcccc;">
             <h3 id="titre_routier" style="margin-top:0; color: var(--police-red);">Routier & Vitesse : 0 pt</h3>
             <label>CP manqués :</label><input type="number" id="r_cp" min="0" value="0">
+            <label>CP en sens inverse :</label><input type="number" id="r_cp_inverse" min="0" value="0">
             <div id="container_radars_saisie" style="margin-top:10px;"></div>
         </div>
 

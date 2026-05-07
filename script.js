@@ -45,7 +45,7 @@ const defaultSponsorsList = [
 ];
 
 const defaultConfig = { 
-    pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
+    pied: 30, cone: 5, atelier: 50, chute: 300, cp: 250, cp_inverse: 500, regu: 10, regu_f: 600, tir: 30, tir_retard: 1, 
     t_ideal: 30, region: 'paca', nb_bases: 2, o_dist_ideal: 100, o_tol_dist: 2, o_pen_dist: 100, pen_non_passage: 20000,
     tenue: 500, briefing: 2000, v_l: 20, v_f: 50, mhe_points: 100000, nb_radars: 1, radar_limits: [50],
     jury_president: '', jury_secretaire: '', jury_nb: 0, jury_noms: [], base_distances: [],
@@ -136,7 +136,7 @@ function isPointsEntryStarted() {
         const d = c.det;
         if ((d.c_tenue || 0) > 0 || d.c_briefing || d.c_admin_ko || d.c_moto_ko || d.r_v_mhe) return true;
         if ((d.m_cones || 0) > 0 || (d.m_pieds || 0) > 0 || (d.m_atels || 0) > 0 || (d.m_chute || 0) > 0 || (d.t_rates || 0) > 0) return true;
-        if ((d.r_cp || 0) > 0 || (d.o_plaque || c.plaque || '') !== '' || (Array.isArray(d.radar_vitesses) && d.radar_vitesses.some(v => String(v || '').trim() !== ''))) return true;
+        if ((d.r_cp || 0) > 0 || (d.r_cp_inverse || 0) > 0 || (d.o_plaque || c.plaque || '') !== '' || (Array.isArray(d.radar_vitesses) && d.radar_vitesses.some(v => String(v || '').trim() !== ''))) return true;
         if ((d.o_km_dep || 0) > 0 || (d.o_km_arr || 0) > 0) return true;
         if ((d.m_chrono || '').trim() !== '' || (d.t_temps || '').trim() !== '' || (d.o_h_dep || '').trim() !== '' || (d.o_h_arr || '').trim() !== '') return true;
 
@@ -397,11 +397,17 @@ function getOrientationCalculations() {
     const hArr = parseHHMM(document.getElementById('o_h_arr')?.value || '');
     const duree = (hArr >= hDep) ? (hArr - hDep) : (1440 - hDep + hArr);
 
+    // Check if duration > 5 hours (300 minutes) - penalty for exceeding time limit
+    const routierMhe = duree > 300;
+
     const dist = Math.max(0, (parseFloat(document.getElementById('o_km_arr')?.value) || 0) - (parseFloat(document.getElementById('o_km_dep')?.value) || 0));
     const penD = Math.round(Math.max(0, Math.abs(dist - config.o_dist_ideal) - (config.o_dist_ideal * config.o_tol_dist / 100)) * config.o_pen_dist);
 
     const cpCount = parseInt(document.getElementById('r_cp')?.value || '0', 10) || 0;
     const cpPoints = cpCount * config.cp;
+
+    const cpInverseCount = parseInt(document.getElementById('r_cp_inverse')?.value || '0', 10) || 0;
+    const cpInversePoints = cpInverseCount * config.cp_inverse;
 
     const radarCount = getRadarCount();
     const radarDetails = [];
@@ -452,14 +458,16 @@ function getOrientationCalculations() {
         hDep,
         hArr,
         duree,
+        routierMhe,
         dist,
         penD,
         cpPoints,
+        cpInversePoints,
         radarPoints,
         radarDetails,
         mheCount,
         totalReg,
-        routePoints: cpPoints + radarPoints + penD,
+        routePoints: cpPoints + cpInversePoints + radarPoints + penD,
         bases
     };
 }
@@ -924,6 +932,7 @@ function chargerPilote(onglet) {
         }
         if(onglet === 'Orientation') {
             document.getElementById('r_cp').value = p.det.r_cp || 0;
+            document.getElementById('r_cp_inverse').value = p.det.r_cp_inverse || 0;
             document.getElementById('o_km_dep').value = p.det.o_km_dep || 0;
             document.getElementById('o_km_arr').value = p.det.o_km_arr || 0;
             document.getElementById('o_h_dep').value = p.det.o_h_dep || "";
@@ -968,7 +977,10 @@ function calculDirect(onglet) {
 
     if (onglet === 'Orientation') {
         const details = getOrientationCalculations();
-        document.getElementById('calc_temps').innerText = `Durée : ${formatHHMM(details.duree)}`;
+        const durationDisplay = details.routierMhe 
+            ? `Durée : ${formatHHMM(details.duree)} 🚩 MHE (> 5 heures)`
+            : `Durée : ${formatHHMM(details.duree)}`;
+        document.getElementById('calc_temps').innerText = durationDisplay;
         document.getElementById('calc_dist').innerText = `Distance : ${details.dist.toFixed(1)} km`;
 
         const titleRadar = details.mheCount > 0 ? ` 🚩 (${details.mheCount} MHE)` : '';
@@ -1811,6 +1823,7 @@ function validerSaisie(onglet) {
 
     if(onglet === 'Orientation') {
         p.det.r_cp = parseInt(document.getElementById('r_cp').value || '0', 10);
+        p.det.r_cp_inverse = parseInt(document.getElementById('r_cp_inverse').value || '0', 10);
         p.det.o_km_dep = parseFloat(document.getElementById('o_km_dep').value || '0');
         p.det.o_km_arr = parseFloat(document.getElementById('o_km_arr').value || '0');
         p.det.o_h_dep = document.getElementById('o_h_dep').value || "";
@@ -1824,6 +1837,7 @@ function validerSaisie(onglet) {
             p.det[`reg${i}_f`] = parseInt(document.getElementById(`reg${i}_f`).value || '0', 10);
         }
         const orientation = getOrientationCalculations();
+        p.det.o_routier_mhe = orientation.routierMhe; // Store MHE flag for routier > 5 heures
         p.pointsRoute = Math.round(orientation.routePoints);
         p.pointsRegu = Math.round(orientation.totalReg);
         p.pointsRegul = p.pointsRegu;
@@ -1838,6 +1852,7 @@ function getMheCount(concurrent) {
     if (concurrent.det?.c_admin_ko) count += 1;
     if (concurrent.det?.c_moto_ko) count += 1;
     if (concurrent.det?.r_v_mhe) count += 1;
+    if (concurrent.det?.o_routier_mhe) count += 1; // MHE for routier > 5 heures
     const radarCount = Math.max(getRadarCount(), Array.isArray(concurrent.det?.radar_vitesses) ? concurrent.det.radar_vitesses.length : 0);
     for (let i = 1; i <= radarCount; i++) {
         const speed = parseRadarSpeed(concurrent.det?.radar_vitesses?.[i - 1]);
@@ -1865,6 +1880,7 @@ function saveConfig() {
     config.tir = parseInt(document.getElementById('p_tir')?.value || config.tir, 10);
     config.tir_retard = parseInt(document.getElementById('p_tir_retard')?.value || config.tir_retard, 10);
     config.cp = parseInt(document.getElementById('p_cp')?.value || config.cp, 10);
+    config.cp_inverse = parseInt(document.getElementById('p_cp_inverse')?.value || config.cp_inverse, 10);
     config.regu = parseInt(document.getElementById('p_regu')?.value || config.regu, 10);
     config.regu_f = parseInt(document.getElementById('p_regu_f')?.value || config.regu_f, 10);
     config.o_tol_dist = parseFloat(document.getElementById('o_tol_dist')?.value || config.o_tol_dist);
@@ -1927,6 +1943,7 @@ function chargerConfigVisual() {
     setValue('p_tir', config.tir);
     setValue('p_tir_retard', config.tir_retard);
     setValue('p_cp', config.cp);
+    setValue('p_cp_inverse', config.cp_inverse);
     setValue('p_regu', config.regu);
     setValue('p_regu_f', config.regu_f);
     setValue('o_tol_dist', config.o_tol_dist);
@@ -2542,7 +2559,7 @@ function getSponsorVideoStateAt(sponsors, tMs, revealStepMs, holdMs, resetMs, st
         return { mode: 'empty', appearedCount: 0, resetProgress: 0, local: 0, layout: getSponsorVideoGridLayout(0, stageWidth) };
     }
 
-    const revealTotalMs = Math.max(0, (sponsors.length - 1) * revealStepMs);
+    const revealTotalMs = Math.max(0, sponsors.length * revealStepMs);
     const loopDurationMs = INTRO_TOTAL_DURATION_MS + revealTotalMs + holdMs + resetMs;
     const local = ((tMs % loopDurationMs) + loopDurationMs) % loopDurationMs;
     const layout = getSponsorVideoGridLayout(sponsors.length, stageWidth);
@@ -2883,8 +2900,9 @@ async function downloadSponsorVideo() {
         const revealStepMs = getSponsorRevealStepDurationMs();
         const holdMs = SPONSOR_HOLD_AFTER_FULL_MS;
         const resetMs = SPONSOR_RESET_ANIM_MS;
-        const revealTotalMs = Math.max(0, (sponsors.length - 1) * revealStepMs);
-        const totalDurationMs = INTRO_TOTAL_DURATION_MS + revealTotalMs + SPONSOR_CARD_HOLD_MS + SPONSOR_CARD_MOVE_MS + holdMs + resetMs + 800;
+        const revealTotalMs = Math.max(0, sponsors.length * revealStepMs);
+        const loopDurationMs = INTRO_TOTAL_DURATION_MS + revealTotalMs + holdMs + resetMs;
+        const totalDurationMs = Math.max(0, loopDurationMs);
 
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -2926,7 +2944,7 @@ async function downloadSponsorVideo() {
         setVideoExportProgress(32, 'Rendu des images vidéo...', true);
         const frameDuration = 1000 / fps;
         const totalFrames = Math.ceil(totalDurationMs / frameDuration);
-        for (let frame = 0; frame <= totalFrames; frame++) {
+        for (let frame = 0; frame < totalFrames; frame++) {
             const tMs = frame * frameDuration;
             const state = getSponsorVideoStateAt(sponsors, tMs, revealStepMs, holdMs, resetMs, width);
             drawSponsorVideoFrame(ctx, width, height, state, sponsors, { logoMap, fallbackLogo, introLogoLeft, introLogoRight }, revealStepMs);
