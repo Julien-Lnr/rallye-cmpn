@@ -1025,7 +1025,19 @@ function filtrerClassement(type) {
         if (a.mhe !== b.mhe) return a.mhe ? 1 : -1;
         const pA = getClassementPoints(a);
         const pB = getClassementPoints(b);
-        return pA - pB || (a.chrono || 0) - (b.chrono || 0);
+        if (pA !== pB) return pA - pB;
+
+        if (type === 'Tir') {
+            const tA = parseChrono(a.det?.t_temps || '');
+            const tB = parseChrono(b.det?.t_temps || '');
+            return tA - tB;
+        }
+
+        if (type === 'Maniabilite') {
+            return (a.chrono || 0) - (b.chrono || 0);
+        }
+
+        return 0;
     });
 
     let headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Points</th>";
