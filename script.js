@@ -1007,6 +1007,14 @@ function calculDirect(onglet) {
 }
 
 // === 8. CLASSEMENTS & EXPORTS ===
+
+function getMheFlagForDisplay(concurrent, type) {
+    if (type === 'General') return concurrent.mhe || false;
+    if (type === 'Maniabilite') return concurrent.mheMani || false;
+    if (type === 'Tir') return concurrent.mheTir || false;
+    if (type === 'Regul' || type === 'Route') return concurrent.mheRoute || false;
+    return false;
+}
 function filtrerClassement(type) {
     currentClassementType = type;
     document.querySelectorAll('.sub-tab').forEach(btn => btn.classList.toggle('active', btn.getAttribute('onclick').includes(type)));
@@ -1022,7 +1030,21 @@ function filtrerClassement(type) {
     };
     
     liste.sort((a, b) => {
-        if (a.mhe !== b.mhe) return a.mhe ? 1 : -1;
+        let aMhe = false, bMhe = false;
+        if (type === 'General') {
+            aMhe = a.mhe || false;
+            bMhe = b.mhe || false;
+        } else if (type === 'Maniabilite') {
+            aMhe = a.mheMani || false;
+            bMhe = b.mheMani || false;
+        } else if (type === 'Tir') {
+            aMhe = a.mheTir || false;
+            bMhe = b.mheTir || false;
+        } else if (type === 'Route' || type === 'Regul') {
+            aMhe = a.mheRoute || false;
+            bMhe = b.mheRoute || false;
+        }
+        if (aMhe !== bMhe) return aMhe ? 1 : -1;
         const pA = getClassementPoints(a);
         const pB = getClassementPoints(b);
         if (pA !== pB) return pA - pB;
@@ -1045,7 +1067,7 @@ function filtrerClassement(type) {
 
     if (type === 'General') {
         // Classement Général: pas de Chrono Mani
-        bodyHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`).join('');
+        bodyHTML = liste.map((c, i) => `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td><strong>${getMheFlagForDisplay(c, type) ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`).join('');
     } else if (type === 'Maniabilite') {
         // Classement Maniabilité: Cônes, Pieds, Ateliers, Chutes, Chrono
         headerHTML = "<th>Rang</th><th>Dossard</th><th>Nom</th><th>Prenom</th><th>Cat.</th><th>Cônes/Piquets</th><th>Pieds à terre</th><th>Ateliers ratés</th><th>Chutes</th><th>Chrono (MM:SS)</th><th>Points</th>";
@@ -1055,7 +1077,7 @@ function filtrerClassement(type) {
             const ateliers = c.det?.m_atels || 0;
             const chutes = c.det?.m_chute || 0;
             const chrono = formatChrono(c.chrono);
-            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${cones}</td><td>${pieds}</td><td>${ateliers}</td><td>${chutes}</td><td>${chrono}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${cones}</td><td>${pieds}</td><td>${ateliers}</td><td>${chutes}</td><td>${chrono}</td><td><strong>${getMheFlagForDisplay(c, type) ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
         }).join('');
     } else if (type === 'Regul') {
         // Classement Bases Chrono: afficher les chrono de chaque base
@@ -1081,7 +1103,7 @@ function filtrerClassement(type) {
                 totalPiedsArretsZone += parseInt(c.det?.[`reg${i}_f`] || '0', 10) || 0;
                 row += `<td>${chrono}</td>`;
             }
-            row += `<td>${totalPiedsArretsZone}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+            row += `<td>${totalPiedsArretsZone}</td><td><strong>${getMheFlagForDisplay(c, type) ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
             return row;
         }).join('');
     } else if (type === 'Tir') {
@@ -1090,7 +1112,7 @@ function filtrerClassement(type) {
         bodyHTML = liste.map((c, i) => {
             const tirsManques = c.det?.t_rates || 0;
             const temps = formatChronoMs(parseChrono(c.det?.t_temps || ""));
-            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${tirsManques}</td><td>${temps}</td><td><strong>${c.mhe ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
+            return `<tr><td>${i+1}</td><td>${c.dossard || '-'}</td><td>${c.nom || ''}</td><td>${c.prenom || ''}</td><td>${c.spec || ''}</td><td>${tirsManques}</td><td>${temps}</td><td><strong>${getMheFlagForDisplay(c, type) ? `MHE (${getClassementPoints(c)})` : getClassementPoints(c)}</strong></td></tr>`;
         }).join('');
     }
 
@@ -1875,12 +1897,51 @@ function getMheCount(concurrent) {
     return count;
 }
 
+function getMheDetailsPerEvent(concurrent) {
+    if (!concurrent) return { admin: 0, route: 0 };
+    const details = {
+        admin: (concurrent.det?.c_admin_ko || concurrent.det?.c_moto_ko) ? 1 : 0,
+        route: 0
+    };
+    if (concurrent.det?.r_v_mhe) details.route += 1;
+    if (concurrent.det?.o_routier_mhe) details.route += 1;
+    const radarCount = Math.max(getRadarCount(), Array.isArray(concurrent.det?.radar_vitesses) ? concurrent.det.radar_vitesses.length : 0);
+    for (let i = 1; i <= radarCount; i++) {
+        const speed = parseRadarSpeed(concurrent.det?.radar_vitesses?.[i - 1]);
+        const limit = getRadarLimit(i);
+        if (Number.isFinite(speed) && (speed - limit) > 39) details.route += 1;
+    }
+    return details;
+}
+
 function recalculerPointsConcurrent(concurrent) {
-    const basePoints = (concurrent.pointsAdmin||0) + (concurrent.pointsMani||0) + (concurrent.pointsTir||0) + (concurrent.pointsRoute||0) + (concurrent.pointsRegu||0);
+    const pointsAdmin = concurrent.pointsAdmin || 0;
+    const pointsMani = concurrent.pointsMani || 0;
+    const pointsTir = concurrent.pointsTir || 0;
+    const pointsRoute = concurrent.pointsRoute || 0;
+    const pointsRegu = concurrent.pointsRegu || 0;
+    
+    const mheDetails = getMheDetailsPerEvent(concurrent);
+    
+    concurrent.mheAdmin = mheDetails.admin > 0;
+    concurrent.mheMani = !!concurrent.manualMhe;
+    concurrent.mheTir = !!concurrent.manualMhe;
+    concurrent.mheRoute = mheDetails.route > 0;
+    
+    const pointsAdminWithMhe = concurrent.mheAdmin ? pointsAdmin + (mheDetails.admin * config.mhe_points) : pointsAdmin;
+    const pointsRouteWithMhe = concurrent.mheRoute ? pointsRoute + (mheDetails.route * config.mhe_points) : pointsRoute;
+    
+    const basePoints = pointsAdmin + pointsMani + pointsTir + pointsRoute + pointsRegu;
+    const manualMhePoints = concurrent.manualMhe ? config.mhe_points : 0;
+    
+    concurrent.pointsAdmin = pointsAdminWithMhe;
+    concurrent.pointsRoute = pointsRouteWithMhe;
+    
     const mheCount = getMheCount(concurrent);
-    concurrent.mhe = mheCount > 0;
+    concurrent.mhe = mheCount > 0 || !!concurrent.manualMhe;
     concurrent.mheCount = mheCount;
-    concurrent.points = basePoints + (mheCount * config.mhe_points);
+    
+    concurrent.points = basePoints + manualMhePoints;
 }
 
 function creerPilote(n,p,s) { return { nom:n, prenom:p, spec:s, dossard:null, points:0, plaque:'', det:{ radar_vitesses: [] } }; }
